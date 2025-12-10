@@ -71,7 +71,12 @@
           postBuild = ''
             wrapProgram $out/bin/md-babel-py \
               --set PATH ${pkgs.lib.makeBinPath ([ pythonWithPackages ] ++ evaluatorDeps)} \
-              --set PYTHONPATH ${md-babel-py}/${pkgs.python312.sitePackages}
+              --set PYTHONPATH ${md-babel-py}/${pkgs.python312.sitePackages} \
+              --set LIBGL_ALWAYS_SOFTWARE 1 \
+              --set GALLIUM_DRIVER llvmpipe \
+              --set __GLX_VENDOR_LIBRARY_NAME mesa \
+              --set LD_LIBRARY_PATH ${pkgs.mesa}/lib:${pkgs.libglvnd}/lib \
+              --set LIBGL_DRIVERS_PATH ${pkgs.mesa}/lib/dri
           '';
         };
 
@@ -122,13 +127,6 @@
             Env = [
               "HOME=/root"
               "FONTCONFIG_FILE=${pkgs.fontconfig.out}/etc/fonts/fonts.conf"
-              # Software rendering for OpenSCAD in headless container
-              "LIBGL_ALWAYS_SOFTWARE=1"
-              "GALLIUM_DRIVER=llvmpipe"
-              "__GLX_VENDOR_LIBRARY_NAME=mesa"
-              # Mesa DRI drivers for software rendering
-              "LD_LIBRARY_PATH=${pkgs.mesa}/lib:${pkgs.libglvnd}/lib"
-              "LIBGL_DRIVERS_PATH=${pkgs.mesa}/lib/dri"
             ];
           };
         };

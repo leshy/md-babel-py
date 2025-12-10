@@ -83,6 +83,17 @@ class Executor:
             # Merge default params with block params (block params override defaults)
             params = {**evaluator.default_params, **block.params}
 
+            # Check if evaluator expects {output} but block doesn't provide it
+            args_str = " ".join(evaluator.default_arguments)
+            uses_output = "{output}" in args_str or "{output}" in evaluator.prefix or "{output}" in evaluator.suffix
+            if uses_output and "output" not in block.params:
+                return ExecutionResult(
+                    stdout="",
+                    stderr="",
+                    success=False,
+                    error_message=f"Evaluator '{block.language}' requires output=<path> parameter",
+                )
+
             # Apply prefix/suffix to code
             code = evaluator.prefix + block.code + evaluator.suffix
 
