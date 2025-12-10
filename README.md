@@ -104,10 +104,12 @@ arrow from Exec.e right 0.3in then down 0.4in then right 0.3in
 Py: oval "Python" fit
 
 # Merge back
-arrow from Sh.e right 0.3in then down 0.4in then right 0.3in
-arrow from Node.e right 0.6in
-Out: file "README.md" fit with .w at last arrow.e
-arrow from Py.e right 0.3in then up 0.4in then to Out.w
+X: dot at (Py.e.x + 0.3in, Node.e.y) invisible
+arrow from Sh.e right until even with X then down to X
+line from Node.e to X
+arrow from Py.e right until even with X then up to X
+Out: file "README.md" fit with .w at (X.x + 0.3in, X.y)
+arrow from X to Out.w
 ```
 
 <!--Result:-->
