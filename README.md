@@ -21,14 +21,27 @@ Current directory: /home/lesh/coding/md-babel-python
 
 ### Python
 
-```python
-print("Hello, world!")
+```python session=example
+a = "hello world"
+print(a)
 ```
 
 <!--Result:-->
 ```
-Hello, world!
+hello world
 ```
+
+optionally preserved sessions between code blocks:
+
+```python session=example
+print(a, "again")
+```
+
+<!--Result:-->
+```
+hello world again
+```
+
 
 ### Graphviz
 
@@ -241,6 +254,7 @@ Variables persist across blocks in the same session:
 x = 10
 y = 20
 ```
+
 
 
 
