@@ -60,9 +60,12 @@ jobs:
 
       - name: Tag and push
         if: github.event_name != 'pull_request'
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
         run: |
           # The nix-built image is tagged as md-babel-py:latest
-          for tag in ${{ steps.meta.outputs.tags }}; do
+          echo "$TAGS" | while read -r tag; do
+            [ -n "$tag" ] || continue
             docker tag md-babel-py:latest "$tag"
             docker push "$tag"
           done
