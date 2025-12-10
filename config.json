@@ -36,7 +36,7 @@
         "outputExtension": ".png",
         "outputIsImage": true,
         "defaultParams": {
-          "colorscheme": "Starnight",
+          "colorscheme": "Tomorrow Night",
           "size": "400,400"
         }
       },
@@ -47,7 +47,9 @@
           "-o", "{output_file}"
         ],
         "outputExtension": ".svg",
-        "outputIsImage": true
+        "outputIsImage": true,
+        "prefix": "digraph { rankdir=LR; bgcolor=transparent; node [shape=egg height=\"0\" margin=\"0.1,0.05\" fontname=terminus fontsize=13 fontcolor=white color=\"#ffffff99\" style=\"solid\"] edge [color=\"#ffffff\" fillcolor=\"transparent\" style=\"solid\"] ",
+        "suffix": "}"
       }
     }
   }

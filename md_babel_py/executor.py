@@ -85,12 +85,15 @@ class Executor:
         temp_files: list[str] = []
 
         try:
+            # Apply prefix/suffix to code
+            code = evaluator.prefix + block.code + evaluator.suffix
+
             # Create temp input file if needed
             if evaluator.input_extension:
                 fd, input_file_path = tempfile.mkstemp(suffix=evaluator.input_extension)
                 temp_files.append(input_file_path)
                 with os.fdopen(fd, 'w') as f:
-                    f.write(block.code)
+                    f.write(code)
                 logger.debug(f"Wrote code to temp file: {input_file_path}")
 
             # Create output file if needed
@@ -120,7 +123,7 @@ class Executor:
             logger.debug(f"Executing command: {cmd}")
 
             # Determine stdin
-            stdin_input = None if evaluator.input_extension else block.code
+            stdin_input = None if evaluator.input_extension else code
 
             result = subprocess.run(
                 cmd,

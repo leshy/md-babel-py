@@ -42,6 +42,8 @@ class EvaluatorConfig:
         output_is_image: If True, output file is an image (result shows path).
         default_params: Default parameter values for {key} substitution.
             Can be overridden by params in code block info string.
+        prefix: String to prepend to code before execution.
+        suffix: String to append to code before execution.
     """
     path: str
     default_arguments: list[str]
@@ -50,6 +52,8 @@ class EvaluatorConfig:
     output_extension: str | None = None
     output_is_image: bool = False
     default_params: dict[str, str] = field(default_factory=dict)
+    prefix: str = ""
+    suffix: str = ""
 
 
 @dataclass
@@ -193,6 +197,18 @@ def _parse_evaluators(raw: dict[str, Any], config_path: Path) -> dict[str, Evalu
                     f"'defaultParams.{key}' must be a string"
                 )
 
+        # Parse prefix/suffix
+        prefix = config.get("prefix", "")
+        if not isinstance(prefix, str):
+            raise ConfigError(
+                f"{config_path}: evaluator for '{lang}': 'prefix' must be a string"
+            )
+        suffix = config.get("suffix", "")
+        if not isinstance(suffix, str):
+            raise ConfigError(
+                f"{config_path}: evaluator for '{lang}': 'suffix' must be a string"
+            )
+
         evaluators[lang] = EvaluatorConfig(
             path=config["path"],
             default_arguments=default_args,
@@ -201,6 +217,8 @@ def _parse_evaluators(raw: dict[str, Any], config_path: Path) -> dict[str, Evalu
             output_extension=output_ext,
             output_is_image=output_is_image,
             default_params=default_params,
+            prefix=prefix,
+            suffix=suffix,
         )
 
     return evaluators

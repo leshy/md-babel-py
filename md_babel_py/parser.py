@@ -37,10 +37,16 @@ FENCE_PATTERN = re.compile(
     re.MULTILINE | re.DOTALL
 )
 
-# Pattern for result/error blocks
-RESULT_PATTERN = re.compile(
+# Pattern for result/error blocks (with code fence)
+RESULT_PATTERN_FENCED = re.compile(
     r'^<!--(Result|Error):-->\n```[^\n]*\n(.*?)^```[ \t]*$',
     re.MULTILINE | re.DOTALL
+)
+
+# Pattern for result blocks with image output (no code fence)
+RESULT_PATTERN_IMAGE = re.compile(
+    r'^<!--(Result):-->\n(!\[[^\]]*\]\([^)]+\))[ \t]*$',
+    re.MULTILINE
 )
 
 
@@ -109,7 +115,8 @@ def find_result_blocks(content: str) -> list[ResultBlock]:
     """Find all result/error blocks in markdown content."""
     blocks = []
 
-    for match in RESULT_PATTERN.finditer(content):
+    # Find fenced result blocks
+    for match in RESULT_PATTERN_FENCED.finditer(content):
         kind = match.group(1)
         result_content = match.group(2)
 
@@ -125,6 +132,23 @@ def find_result_blocks(content: str) -> list[ResultBlock]:
             end_line=end_line,
         ))
 
+    # Find image result blocks (no code fence)
+    for match in RESULT_PATTERN_IMAGE.finditer(content):
+        kind = match.group(1)
+        result_content = match.group(2)
+
+        start_pos = match.start()
+        end_pos = match.end()
+        start_line = content[:start_pos].count('\n') + 1
+        end_line = content[:end_pos].count('\n') + 1
+
+        blocks.append(ResultBlock(
+            kind=kind,
+            content=result_content,
+            start_line=start_line,
+            end_line=end_line,
+        ))
+
     return blocks
 
 
@@ -132,6 +156,7 @@ def find_block_result_range(content: str, block: CodeBlock) -> tuple[int, int] |
     """Find the range of any existing result/error block following a code block.
 
     Returns (start_line, end_line) of the result block(s), or None if no result exists.
+    Handles both fenced code blocks and image results.
     """
     lines = content.split('\n')
     line_idx = block.end_line  # 0-indexed position after the block
@@ -154,17 +179,26 @@ def find_block_result_range(content: str, block: CodeBlock) -> tuple[int, int] |
             if result_start is None:
                 result_start = line_idx + 1  # Convert to 1-indexed
 
-            # Find the code block that follows
-            if line_idx + 1 < len(lines) and lines[line_idx + 1].startswith('```'):
-                # Find closing fence
-                fence_line = line_idx + 1
-                for i in range(fence_line + 1, len(lines)):
-                    if lines[i].strip() == '```':
-                        result_end = i + 1  # 1-indexed, inclusive
-                        line_idx = i + 1
+            # Check what follows the comment
+            if line_idx + 1 < len(lines):
+                next_line = lines[line_idx + 1]
+
+                if next_line.startswith('```'):
+                    # Fenced code block - find closing fence
+                    fence_line = line_idx + 1
+                    for i in range(fence_line + 1, len(lines)):
+                        if lines[i].strip() == '```':
+                            result_end = i + 1  # 1-indexed, inclusive
+                            line_idx = i + 1
+                            break
+                    else:
+                        # No closing fence found
                         break
+                elif next_line.startswith('!['):
+                    # Image result - just this line
+                    result_end = line_idx + 2  # 1-indexed (comment + image line)
+                    line_idx = line_idx + 2
                 else:
-                    # No closing fence found
                     break
             else:
                 break

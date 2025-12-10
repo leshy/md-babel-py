@@ -173,6 +173,9 @@ y = 20
 ```
 
 
+
+
+
 ```python session=demo
 print(f"x + y = {x + y}")
 ```
@@ -225,10 +228,8 @@ sphere(r=7);
 ### Graphviz
 
 ```dot output=assets/graph.svg
-digraph G {
-  A -> B -> C
-  A -> C
-}
+A -> B -> C
+A -> C
 ```
 
 <!--Result:-->
