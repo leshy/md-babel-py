@@ -54,6 +54,9 @@
 
           # OpenSCAD needs a virtual framebuffer
           xvfb-run
+
+          # Asymptote needs LaTeX
+          texliveSmall
         ];
 
         # Runtime wrapper with controlled PATH - pythonWithPackages first
