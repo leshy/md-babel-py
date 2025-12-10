@@ -56,6 +56,42 @@ Hello from Node.js
 Node version: v24.11.1
 ```
 
+### Pikchr
+
+SQLite's diagram language for technical documentation:
+
+```pikchr output=assets/pikchr-demo.svg
+color = white
+fill = none
+linewid = 0.4in
+
+# Input file
+In: file "README.md" fit
+arrow
+
+# Processing
+Parse: box "Parse" rad 5px fit
+arrow
+Exec: box "Execute" rad 5px fit
+
+# Fan out to languages
+arrow from Exec.e right 0.3in then up 0.4in then right 0.3in
+Sh: oval "Shell" fit
+arrow from Exec.e right 0.3in then right 0.3in
+Node: oval "Node" fit
+arrow from Exec.e right 0.3in then down 0.4in then right 0.3in
+Py: oval "Python" fit
+
+# Merge back
+arrow from Sh.e right 0.3in then down 0.4in then right 0.3in
+arrow from Node.e right 0.6in
+Out: file "README.md" fit with .w at last arrow.e
+arrow from Py.e right 0.3in then up 0.4in then to Out.w
+```
+
+<!--Result:-->
+![output](assets/pikchr-demo.svg)
+
 ### Asymptote
 
 Vector graphics for technical drawings:
@@ -295,6 +331,7 @@ Variables persist across blocks in the same session:
 x = 10
 y = 20
 ```
+
 
 
 

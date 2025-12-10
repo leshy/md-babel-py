@@ -40,6 +40,14 @@
           "command": ["node"]
         }
       },
+      "pikchr": {
+        "path": "sh",
+        "defaultArguments": [
+          "-c",
+          "$(nix build nixpkgs#pikchr --no-link --print-out-paths)/bin/pikchr --svg-only {input_file} > {output}"
+        ],
+        "inputExtension": ".pikchr"
+      },
       "asymptote": {
         "path": "sh",
         "defaultArguments": [
