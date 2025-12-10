@@ -3,12 +3,23 @@
 import json
 import logging
 from dataclasses import dataclass, field
+from importlib import resources
 from pathlib import Path
 from typing import Any
 
 from .exceptions import ConfigError
 
 logger = logging.getLogger(__name__)
+
+
+def _load_default_config() -> dict[str, Any] | None:
+    """Load bundled default config."""
+    try:
+        ref = resources.files("md_babel_py").joinpath("default_config.json")
+        content = ref.read_text()
+        return json.loads(content)
+    except (TypeError, FileNotFoundError, json.JSONDecodeError):
+        return None
 
 
 @dataclass
@@ -91,7 +102,18 @@ def load_config(config_path: Path | None = None) -> Config:
 
     merged_evaluators: dict[str, EvaluatorConfig] = {}
 
-    for path in reversed(configs_to_try):  # Process in reverse so earlier takes precedence
+    # Load bundled default config first (lowest precedence)
+    default_raw = _load_default_config()
+    if default_raw:
+        logger.debug("Loading bundled default config")
+        try:
+            evaluators = _parse_evaluators(default_raw, Path("<default>"))
+            merged_evaluators.update(evaluators)
+        except Exception as e:
+            logger.warning(f"Error parsing bundled config: {e}")
+
+    # Load external configs (higher precedence, processed in reverse order)
+    for path in reversed(configs_to_try):
         if path.exists():
             logger.debug(f"Loading config from {path}")
             try:

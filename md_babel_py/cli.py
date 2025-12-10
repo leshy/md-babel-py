@@ -1,11 +1,12 @@
 """Command-line interface for md-babel-py."""
 
 import argparse
+import json
 import logging
 import sys
 from pathlib import Path
 
-from .config import load_config, get_evaluator, Config
+from .config import load_config, get_evaluator, Config, EvaluatorConfig
 from .exceptions import ConfigError, MdBabelError
 from .executor import Executor
 from .parser import find_code_blocks, CodeBlock
@@ -29,6 +30,14 @@ def main() -> int:
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    # config command - show merged config
+    config_parser = subparsers.add_parser("config", help="Show merged configuration as JSON")
+    config_parser.add_argument("--config", "-c", type=Path, help="Config file path")
+
+    # ls command - list configured evaluators
+    ls_parser = subparsers.add_parser("ls", help="List configured evaluators")
+    ls_parser.add_argument("--config", "-c", type=Path, help="Config file path")
+
     # run command
     run_parser = subparsers.add_parser("run", help="Execute code blocks in a markdown file")
     run_parser.add_argument("file", type=Path, help="Markdown file to process")
@@ -44,7 +53,11 @@ def main() -> int:
     setup_logging(verbose=args.verbose)
 
     try:
-        if args.command == "run":
+        if args.command == "config":
+            return cmd_config(args)
+        elif args.command == "ls":
+            return cmd_ls(args)
+        elif args.command == "run":
             return cmd_run(args)
         return 0
     except ConfigError as e:
@@ -169,6 +182,75 @@ def execute_blocks(
                 break
 
     return results, test_failures, stopped_early
+
+
+def cmd_config(args: argparse.Namespace) -> int:
+    """Show merged configuration as JSON.
+
+    Args:
+        args: Parsed command-line arguments.
+
+    Returns:
+        Exit code (0 for success).
+    """
+    config = load_config(args.config)
+
+    # Convert to JSON-serializable format
+    output = {
+        "evaluators": {
+            "codeBlock": {
+                lang: {
+                    "path": ev.path,
+                    "defaultArguments": ev.default_arguments,
+                    **({"session": {
+                        "command": ev.session.command,
+                        **({"marker": ev.session.marker} if ev.session.marker else {}),
+                        **({"prompts": ev.session.prompts} if ev.session.prompts else {}),
+                    }} if ev.session else {}),
+                    **({"inputExtension": ev.input_extension} if ev.input_extension else {}),
+                    **({"defaultParams": ev.default_params} if ev.default_params else {}),
+                    **({"prefix": ev.prefix} if ev.prefix else {}),
+                    **({"suffix": ev.suffix} if ev.suffix else {}),
+                }
+                for lang, ev in sorted(config.evaluators.items())
+            }
+        }
+    }
+
+    print(json.dumps(output, indent=2))
+    return 0
+
+
+def cmd_ls(args: argparse.Namespace) -> int:
+    """List configured evaluators.
+
+    Args:
+        args: Parsed command-line arguments.
+
+    Returns:
+        Exit code (0 for success).
+    """
+    config = load_config(args.config)
+
+    if not config.evaluators:
+        print("No evaluators configured.")
+        return 0
+
+    for lang, ev in sorted(config.evaluators.items()):
+        features = []
+        if ev.session:
+            features.append("session")
+        if ev.input_extension:
+            features.append(f"file:{ev.input_extension}")
+        if ev.prefix or ev.suffix:
+            features.append("wrap")
+
+        features_str = f" [{', '.join(features)}]" if features else ""
+        cmd = f"{ev.path} {' '.join(ev.default_arguments)}"
+        print(f"{lang}{features_str}")
+        print(f"  {cmd}")
+
+    return 0
 
 
 def cmd_run(args: argparse.Namespace) -> int:

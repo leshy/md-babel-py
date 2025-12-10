@@ -23,6 +23,9 @@ matplotlib = ["matplotlib", "numpy"]
 [tool.setuptools.packages.find]
 include = ["md_babel_py*"]
 
+[tool.setuptools.package-data]
+md_babel_py = ["default_config.json"]
+
 [tool.mypy]
 python_version = "3.10"
 strict = true
