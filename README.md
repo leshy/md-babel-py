@@ -18,7 +18,7 @@ echo "cwd: $(pwd)"
 
 <!--Result:-->
 ```
-Current directory: /home/lesh/coding/md-babel-python
+cwd: /work
 ```
 
 ### Python
@@ -54,7 +54,7 @@ console.log(`Node version: ${process.version}`);
 <!--Result:-->
 ```
 Hello from Node.js
-Node version: v24.11.1
+Node version: v22.21.1
 ```
 
 ### Matplotlib
@@ -171,11 +171,11 @@ ASCII art diagrams:
 
 <!--Result:-->
 ```
-        10
-        ___
-    1   ╲
+        10   
+        ___  
+    1   ╲    
 1 + ─ + ╱   i
-    2   ‾‾‾
+    2   ‾‾‾  
          0
 ```
 
@@ -186,7 +186,15 @@ A -> C
 
 <!--Result:-->
 ```
-bla x
+┌───┐
+│A  │
+└┬─┬┘
+ │┌▽┐
+ ││B│
+ │└┬┘
+┌▽─▽┐
+│C  │
+└───┘
 ```
 
 ## Install
