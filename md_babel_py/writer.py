@@ -50,8 +50,12 @@ def apply_results(content: str, results: list[BlockResult]) -> str:
 
 
 def build_result_block(result: ExecutionResult) -> list[str]:
-    """Build the result/error block lines."""
-    blocks = []
+    """Build the result/error block lines.
+
+    Only includes stderr/error block if the execution failed (success=False).
+    Successful executions only show stdout.
+    """
+    blocks: list[str] = []
 
     # Add stdout as Result block
     if result.stdout.strip():
@@ -62,21 +66,22 @@ def build_result_block(result: ExecutionResult) -> list[str]:
             '```',
         ])
 
-    # Add stderr or error as Error block
-    error_content = result.stderr.strip()
-    if result.error_message:
-        if error_content:
-            error_content += '\n\n' + result.error_message
-        else:
-            error_content = result.error_message
+    # Only add stderr/error block if execution failed
+    if not result.success:
+        error_content = result.stderr.strip()
+        if result.error_message:
+            if error_content:
+                error_content += '\n\n' + result.error_message
+            else:
+                error_content = result.error_message
 
-    if error_content:
-        blocks.extend([
-            '<!--Error:-->',
-            '```',
-            error_content,
-            '```',
-        ])
+        if error_content:
+            blocks.extend([
+                '<!--Error:-->',
+                '```',
+                error_content,
+                '```',
+            ])
 
     # If no output at all, add empty result
     if not blocks:

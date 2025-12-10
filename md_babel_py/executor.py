@@ -93,17 +93,26 @@ class Executor:
                     f.write(block.code)
                 logger.debug(f"Wrote code to temp file: {input_file_path}")
 
-            # Create temp output file if needed
+            # Create output file if needed
             if evaluator.output_extension:
-                fd, output_file_path = tempfile.mkstemp(suffix=evaluator.output_extension)
-                os.close(fd)  # Close fd, command will write to it
-                temp_files.append(output_file_path)
+                # Check if output path specified in params
+                if "output" in block.params:
+                    output_file_path = block.params["output"]
+                    # Ensure parent directory exists
+                    Path(output_file_path).parent.mkdir(parents=True, exist_ok=True)
+                else:
+                    fd, output_file_path = tempfile.mkstemp(suffix=evaluator.output_extension)
+                    os.close(fd)  # Close fd, command will write to it
+                    temp_files.append(output_file_path)
                 logger.debug(f"Output file: {output_file_path}")
+
+            # Merge default params with block params (block params override defaults)
+            params = {**evaluator.default_params, **block.params}
 
             # Substitute params in arguments
             args = substitute_params(
                 evaluator.default_arguments,
-                block.params,
+                params,
                 input_file=input_file_path,
                 output_file=output_file_path,
             )
@@ -135,7 +144,8 @@ class Executor:
                     # For images, return the path (will be embedded in result)
                     stdout = f"![output]({output_file_path})"
                     # Don't delete output file - it's the result!
-                    temp_files.remove(output_file_path)
+                    if output_file_path in temp_files:
+                        temp_files.remove(output_file_path)
                 else:
                     # Read text output from file
                     stdout = Path(output_file_path).read_text()

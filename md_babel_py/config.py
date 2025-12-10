@@ -40,6 +40,8 @@ class EvaluatorConfig:
             If set, output is read from this file instead of stdout.
             Use {output_file} placeholder in defaultArguments.
         output_is_image: If True, output file is an image (result shows path).
+        default_params: Default parameter values for {key} substitution.
+            Can be overridden by params in code block info string.
     """
     path: str
     default_arguments: list[str]
@@ -47,6 +49,7 @@ class EvaluatorConfig:
     input_extension: str | None = None
     output_extension: str | None = None
     output_is_image: bool = False
+    default_params: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -177,6 +180,19 @@ def _parse_evaluators(raw: dict[str, Any], config_path: Path) -> dict[str, Evalu
                 f"{config_path}: evaluator for '{lang}': 'outputIsImage' must be a boolean"
             )
 
+        # Parse default params
+        default_params = config.get("defaultParams", {})
+        if not isinstance(default_params, dict):
+            raise ConfigError(
+                f"{config_path}: evaluator for '{lang}': 'defaultParams' must be an object"
+            )
+        for key, value in default_params.items():
+            if not isinstance(value, str):
+                raise ConfigError(
+                    f"{config_path}: evaluator for '{lang}': "
+                    f"'defaultParams.{key}' must be a string"
+                )
+
         evaluators[lang] = EvaluatorConfig(
             path=config["path"],
             default_arguments=default_args,
@@ -184,6 +200,7 @@ def _parse_evaluators(raw: dict[str, Any], config_path: Path) -> dict[str, Evalu
             input_extension=input_ext,
             output_extension=output_ext,
             output_is_image=output_is_image,
+            default_params=default_params,
         )
 
     return evaluators

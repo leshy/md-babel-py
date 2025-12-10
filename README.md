@@ -213,6 +213,34 @@ echo "Current directory: $(pwd)"
 Current directory: /home/lesh/coding/md-babel-python
 ```
 
+### OpenSCAD (File-based Output)
+
+Generate 3D renderings. Use `output=path` to specify the output file:
+
+```openscad output=assets/cube-sphere.png
+cube([10, 10, 10]);
+sphere(r=7);
+```
+
+<!--Result:-->
+```
+![output](assets/cube-sphere.png)
+```
+
+### Graphviz
+
+```dot output=assets/graph.svg
+digraph G {
+  A -> B -> C
+  A -> C
+}
+```
+
+<!--Result:-->
+```
+![output](assets/graph.svg)
+```
+
 ## Exit Codes
 
 - `0`: All blocks executed successfully

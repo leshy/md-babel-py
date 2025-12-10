@@ -34,6 +34,19 @@
         ],
         "inputExtension": ".scad",
         "outputExtension": ".png",
+        "outputIsImage": true,
+        "defaultParams": {
+          "colorscheme": "Starnight",
+          "size": "400,400"
+        }
+      },
+      "dot": {
+        "path": "dot",
+        "defaultArguments": [
+          "-Tsvg",
+          "-o", "{output_file}"
+        ],
+        "outputExtension": ".svg",
         "outputIsImage": true
       }
     }
