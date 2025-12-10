@@ -10,3 +10,4 @@ build
 htmlcov
 .mypy_cache
 __cache__
+.envrc

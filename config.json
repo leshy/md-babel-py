@@ -5,6 +5,13 @@
         "path": "/usr/bin/env",
         "defaultArguments": ["sh"]
       },
+      "figlet": {
+        "path": "figlet",
+        "defaultArguments": ["-f", "{font}"],
+        "defaultParams": {
+          "font": "standard"
+        }
+      },
       "python": {
         "path": "/usr/bin/env",
         "defaultArguments": ["python3"],
