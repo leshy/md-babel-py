@@ -4,12 +4,14 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
+    diagon.url = "github:petertrotman/nixpkgs/Diagon";
   };
 
-  outputs = { self, nixpkgs, flake-utils }:
+  outputs = { self, nixpkgs, flake-utils, diagon }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
+        diagonPkg = diagon.legacyPackages.${system}.diagon;
 
         # Python with matplotlib for code blocks
         pythonWithPackages = pkgs.python312.withPackages (ps: [
@@ -51,12 +53,14 @@
           pikchr
           openscad
           imagemagick
+          diagonPkg
 
-          # OpenSCAD needs a virtual framebuffer
+          # OpenSCAD needs a virtual framebuffer and GL libs
           xvfb-run
+          mesa
 
-          # Asymptote needs LaTeX
-          texliveSmall
+          # Asymptote needs LaTeX and dvisvgm
+          (texliveSmall.withPackages (ps: [ ps.dvisvgm ]))
         ];
 
         # Runtime wrapper with controlled PATH - pythonWithPackages first
@@ -102,12 +106,14 @@
             pkgs.coreutils
           ] ++ evaluatorDeps;
 
-          # Create /usr/bin/env symlink and config directory
+          # Create /usr/bin/env symlink, config directory, and /tmp
           extraCommands = ''
             mkdir -p usr/bin
             ln -s ${pkgs.coreutils}/bin/env usr/bin/env
             mkdir -p root/.config/md-babel
             cp ${./config.json} root/.config/md-babel/config.json
+            mkdir -p tmp
+            chmod 1777 tmp
           '';
 
           config = {
@@ -116,6 +122,13 @@
             Env = [
               "HOME=/root"
               "FONTCONFIG_FILE=${pkgs.fontconfig.out}/etc/fonts/fonts.conf"
+              # Software rendering for OpenSCAD in headless container
+              "LIBGL_ALWAYS_SOFTWARE=1"
+              "GALLIUM_DRIVER=llvmpipe"
+              "__GLX_VENDOR_LIBRARY_NAME=mesa"
+              # Mesa DRI drivers for software rendering
+              "LD_LIBRARY_PATH=${pkgs.mesa}/lib:${pkgs.libglvnd}/lib"
+              "LIBGL_DRIVERS_PATH=${pkgs.mesa}/lib/dri"
             ];
           };
         };
