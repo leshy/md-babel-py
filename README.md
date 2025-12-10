@@ -1,78 +1,12 @@
 # md-babel-py
 
-Execute code blocks in markdown files with session support.
+Execute code blocks in markdown files and insert the results.
 
-## Local Install
-
-```sh skip
-# Using uv (recommended)
-uv pip install md-babel-py
-md-babel-py run README.md --stdout
-
-# Or with pip
-pip install md-babel-py
-```
-
-## Docker
-
-```sh skip
-# Run on a file and print to stdout
-docker run -v $(pwd):/work lesh/md-babel-py:main run /work/README.md --stdout
-
-# Edit file in-place
-docker run -v $(pwd):/work lesh/md-babel-py:main run /work/README.md
-```
-
-## Nix
-
-```sh skip
-# Run directly from GitHub
-nix run github:leshy/md-babel-py -- run README.md --stdout
-
-# Or clone and run locally
-nix run . -- run README.md --stdout
-```
-
-## GitHub Action
-
-Use in your workflows to execute code blocks in markdown files:
-
-```yaml skip
-- uses: leshy/md-babel-py@main
-  with:
-    files: 'README.md docs/*.md'
-```
-
-### Inputs
-
-| Input | Description | Default |
-|-------|-------------|---------|
-| `files` | Markdown files to process (glob patterns supported) | required |
-| `args` | Additional arguments for md-babel-py | `''` |
-| `fail-on-change` | Fail if files were modified (for CI checks) | `false` |
-
-### Examples
-
-Update docs and commit changes:
-
-```yaml skip
-- uses: leshy/md-babel-py@main
-  with:
-    files: '*.md docs/**/*.md'
-
-- uses: stefanzweifel/git-auto-commit-action@v5
-  with:
-    commit_message: 'Update markdown code block results'
-```
-
-CI check that docs are up to date:
-
-```yaml skip
-- uses: leshy/md-babel-py@main
-  with:
-    files: 'README.md'
-    fail-on-change: 'true'
-```
+**Use cases:**
+- Keep documentation examples up-to-date automatically
+- Validate code snippets in docs actually work
+- Generate diagrams and charts from code in markdown
+- Literate programming with executable documentation
 
 ## Languages
 
@@ -99,7 +33,7 @@ print(a)
 hello world
 ```
 
-optionally preserved sessions between code blocks:
+Sessions preserve state between code blocks:
 
 ```python session=example
 print(a, "again")
@@ -109,7 +43,6 @@ print(a, "again")
 ```
 hello world again
 ```
-
 
 ### Node.js
 
@@ -146,7 +79,7 @@ plt.savefig('{output}', transparent=True)
 
 ### Pikchr
 
-SQLite's diagram language for technical documentation:
+SQLite's diagram language:
 
 ```pikchr output=assets/pikchr-demo.svg
 color = white
@@ -182,7 +115,7 @@ arrow from Py.e right 0.3in then up 0.4in then to Out.w
 
 ### Asymptote
 
-Vector graphics for technical drawings:
+Vector graphics:
 
 ```asymptote output=assets/histogram.svg
 import graph;
@@ -228,7 +161,9 @@ sphere(r=7);
 <!--Result:-->
 ![output](assets/cube-sphere.png)
 
-### Diagon Math
+### Diagon
+
+ASCII art diagrams:
 
 ```diagon mode=Math
 1 + 1/2 + sum(i,0,10)
@@ -236,15 +171,13 @@ sphere(r=7);
 
 <!--Result:-->
 ```
-        10   
-        ___  
-    1   ╲    
+        10
+        ___
+    1   ╲
 1 + ─ + ╱   i
-    2   ‾‾‾  
+    2   ‾‾‾
          0
 ```
-
-### Diagon GraphDAG
 
 ```diagon mode=GraphDAG
 A -> B -> C
@@ -264,23 +197,59 @@ A -> C
 └───┘
 ```
 
+## Install
 
-## Quick Start
-
-Run all code blocks in a markdown file:
+### Nix (recommended)
 
 ```sh skip
-md-babel-py run document.md
+# Run directly from GitHub
+nix run github:leshy/md-babel-py -- run README.md --stdout
+
+# Or clone and run locally
+nix run . -- run README.md --stdout
 ```
 
-Results are inserted as `<!--Result:-->` blocks after each code block.
+### Docker
 
-## Features
+```sh skip
+# Pull from Docker Hub
+docker run -v $(pwd):/work lesh/md-babel-py:main run /work/README.md --stdout
 
-- **Session support**: Blocks can share state via persistent REPL sessions
-- **Multiple languages**: Configure any language with a command-line interpreter
-- **Expected errors**: Test that code blocks fail as expected (for documentation)
-- **Skip/no-result flags**: Control which blocks execute and show output
+# Or build locally via Nix
+nix build .#docker     # builds tarball to ./result
+docker load < result   # loads image from tarball
+docker run -v $(pwd):/work md-babel-py:latest run /work/file.md --stdout
+```
+
+### pipx
+
+```sh skip
+pipx install md-babel-py
+# or: uv pip install md-babel-py
+md-babel-py run README.md --stdout
+```
+
+If not using nix or docker, evaluators require system dependencies:
+
+| Language  | System packages             |
+|-----------|-----------------------------|
+| python    | python3                     |
+| node      | nodejs                      |
+| dot       | graphviz                    |
+| asymptote | asymptote, texlive, dvisvgm |
+| pikchr    | pikchr                      |
+| openscad  | openscad, xvfb, imagemagick |
+| diagon    | diagon                      |
+
+```sh skip
+# Arch Linux
+sudo pacman -S python nodejs graphviz asymptote texlive-basic openscad xorg-server-xvfb imagemagick
+
+# Debian/Ubuntu
+sudo apt-get install python3 nodejs graphviz asymptote texlive xvfb imagemagick openscad
+```
+
+Note: pikchr and diagon may need to be built from source. Use Docker or Nix for full evaluator support.
 
 ## Usage
 
@@ -291,7 +260,7 @@ md-babel-py run document.md
 # Output to separate file
 md-babel-py run document.md --output result.md
 
-# Print to stdout (for piping)
+# Print to stdout
 md-babel-py run document.md --stdout
 
 # Only run specific languages
@@ -299,9 +268,6 @@ md-babel-py run document.md --lang python,sh
 
 # Dry run - show what would execute
 md-babel-py run document.md --dry-run
-
-# Verbose output for debugging
-md-babel-py -v run document.md
 ```
 
 ## Code Block Syntax
@@ -314,41 +280,57 @@ x = 42
 
 ### Flags
 
-| Flag | Description |
-|------|-------------|
-| `session=NAME` | Share state with other blocks using the same session name |
-| `expected-error` | Expect this block to fail; test fails if it succeeds |
-| `skip` | Don't execute this block |
-| `no-result` | Execute but don't insert result block |
+| Flag             | Description                                               |
+|------------------|-----------------------------------------------------------|
+| `session=NAME`   | Share state with other blocks using the same session name |
+| `output=PATH`    | Write output to file (for images/diagrams)                |
+| `expected-error` | Expect this block to fail; test fails if it succeeds      |
+| `skip`           | Don't execute this block                                  |
+| `no-result`      | Execute but don't insert result block                     |
 
 ### Custom Parameters
 
-Any `key=value` pair in the info string (except `session`) becomes a custom parameter that can be used in the evaluator command via `{key}` placeholders:
+Any `key=value` pair becomes a parameter for the evaluator command:
 
 ````markdown
 ```diagon mode=GraphDAG
 A -> B
-B -> C
 ```
 ````
 
-With config:
-```json skip
-{
-  "diagon": {
-    "path": "diagon",
-    "defaultArguments": ["{mode}", "-style=Unicode"]
-  }
-}
+With config `"defaultArguments": ["{mode}"]`, the `{mode}` placeholder is replaced with `GraphDAG`.
+
+## GitHub Action
+
+```yaml skip
+- uses: leshy/md-babel-py@main
+  with:
+    files: 'README.md docs/*.md'
 ```
 
-The `{mode}` placeholder is replaced with `GraphDAG` from the code block.
+| Input            | Description                               | Default  |
+|------------------|-------------------------------------------|----------|
+| `files`          | Markdown files to process (glob patterns) | required |
+| `args`           | Additional arguments                      | `''`     |
+| `fail-on-change` | Fail if files were modified (CI check)    | `false`  |
+
+Example with auto-commit:
+
+```yaml skip
+- uses: leshy/md-babel-py@main
+  with:
+    files: '*.md docs/**/*.md'
+
+- uses: stefanzweifel/git-auto-commit-action@v5
+  with:
+    commit_message: 'Update markdown code block results'
+```
 
 ## Configuration
 
-Create `config.json` in your project directory or `~/.config/md-babel/config.json`:
+Create `config.json` in your project or `~/.config/md-babel/config.json`:
 
-```json
+```json skip
 {
   "evaluators": {
     "codeBlock": {
@@ -359,122 +341,65 @@ Create `config.json` in your project directory or `~/.config/md-babel/config.jso
           "command": ["python3", "-i"],
           "prompts": [">>> ", "... "]
         }
-      },
-      "sh": {
-        "path": "/bin/sh",
-        "defaultArguments": []
-      },
-      "node": {
-        "path": "/usr/bin/env",
-        "defaultArguments": ["node"],
-        "session": {
-          "command": ["node"],
-          "prompts": ["> ", "... "]
-        }
       }
     }
   }
 }
 ```
 
-### Session Configuration
-
-- `command`: Command to start the REPL
-- `marker`: Custom marker command (optional, has built-in defaults)
-- `prompts`: REPL prompt patterns to strip from output (optional)
-
 ### File-based Evaluators
 
-For tools that read from files instead of stdin, or output to files:
+For tools that use input/output files:
 
 ```json skip
 {
   "openscad": {
     "path": "xvfb-run",
-    "defaultArguments": [
-      "-a", "openscad",
-      "-o", "{output_file}",
-      "--colorscheme", "{colorscheme}",
-      "--imgsize", "{size}",
-      "{input_file}"
-    ],
-    "inputExtension": ".scad",
-    "outputExtension": ".png",
-    "outputIsImage": true
+    "defaultArguments": ["-a", "openscad", "-o", "{output_file}", "{input_file}"],
+    "inputExtension": ".scad"
   }
 }
 ```
 
-- `inputExtension`: Write code to temp file with this extension (use `{input_file}` placeholder)
-- `outputExtension`: Create temp output file with this extension (use `{output_file}` placeholder)
-- `outputIsImage`: If true, result shows markdown image link instead of file contents
-
-## Examples
-
-### Session State
-
-Variables persist across blocks in the same session:
-
-```python session=demo
-x = 10
-y = 20
-```
-
-
-
-
-
-
-
-
-```python session=demo
-print(f"x + y = {x + y}")
-```
-
-<!--Result:-->
-```
-x + y = 30
-```
-
-### Expected Errors
-
-Use `expected-error` to document code that should fail:
-
-```python expected-error
-raise ValueError("This error is expected")
-```
-
-<!--Error:-->
-```
-Traceback (most recent call last):
-  File "<stdin>", line 1, in <module>
-ValueError: This error is expected
-
-Exit code: 1
-```
-
-## Exit Codes
-
-- `0`: All blocks executed successfully
-- `1`: Execution error or test failure
-
-For `expected-error` blocks, the test fails (exit 1) if the block succeeds.
-
 ## Development
 
+### direnv Setup
+
+Two `.envrc` files are provided:
+
+| File          | Description                                     |
+|---------------|-------------------------------------------------|
+| `.envrc.nix`  | Nix flake devShell (all evaluators + dev tools) |
+| `.envrc.venv` | Python venv only                                |
+
 ```sh skip
-# Install in development mode
+ln -s .envrc.nix .envrc
+direnv allow
+```
+
+### Nix Development Shell
+
+```sh skip
+nix develop
+# Provides: md-babel-py, pytest, mypy, ruff, and all evaluators
+```
+
+### Manual Setup
+
+```sh skip
 pip install -e ".[dev]"
-
-# Run tests
 pytest tests/ -v
-
-# Type checking
 mypy md_babel_py/
-
-# Lint
 ruff check md_babel_py/
 ```
+
+### Nix Packages
+
+| Package   | Description                                |
+|-----------|--------------------------------------------|
+| `default` | Full package with all evaluators in PATH   |
+| `minimal` | Just Python package, no bundled evaluators |
+| `docker`  | Docker image tarball                       |
 
 ## License
 
