@@ -40,6 +40,14 @@
           "command": ["node"]
         }
       },
+      "asymptote": {
+        "path": "sh",
+        "defaultArguments": [
+          "-c",
+          "out=\"{output}\"; asy -f svg -o \"${out%.svg}\" {input_file}"
+        ],
+        "inputExtension": ".asy"
+      },
       "dot": {
         "path": "dot",
         "defaultArguments": [

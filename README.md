@@ -56,6 +56,62 @@ Hello from Node.js
 Node version: v24.11.1
 ```
 
+### Asymptote
+
+Vector graphics for technical drawings:
+
+```asymptote output=assets/histogram.svg
+import graph;
+import stats;
+
+size(400,200,IgnoreAspect);
+defaultpen(white);
+
+int n=10000;
+real[] a=new real[n];
+for(int i=0; i < n; ++i) a[i]=Gaussrand();
+
+draw(graph(Gaussian,min(a),max(a)),orange);
+
+int N=bins(a);
+
+histogram(a,min(a),max(a),N,normalize=true,low=0,rgb(0.4,0.6,0.8),rgb(0.2,0.4,0.6),bars=true);
+
+xaxis("$x$",BottomTop,LeftTicks,p=white);
+yaxis("$dP/dx$",LeftRight,RightTicks(trailingzero),p=white);
+```
+
+<!--Result:-->
+![output](assets/histogram.svg)
+
+```asymptote output=assets/hobbydir.svg
+size(200);
+defaultpen(white);
+pair z0=(0,0);
+pair z1=(1,2);
+pair z2=(2,1);
+
+path g=z0..z1..z2;
+
+label("$\ell_k$",z0--z1);
+draw("$\ell_{k+1}$",z1--z2,white+dashed);
+draw(z0--interp(z0,z1,1.5),white+dashed);
+pair d1=dir(g,1);
+draw(z1-d1..z1+d1,rgb(0.4,0.6,0.8)+dashed);
+draw(g,rgb(0.4,0.6,0.8));
+draw(Label("$\theta_k$",0.4),arc(z1,0.4,degrees(z2-z1),degrees(d1)),rgb(0.4,0.6,0.8),Arrow,
+     EndPenMargin);
+draw("$\phi_k$",arc(z1,0.4,degrees(d1),degrees(z1-z0),CCW),white,Arrow,
+     EndPenMargin);
+
+dot("$z_{k-1}$",z0,orange);
+dot("$z_k$",z1,NW,orange);
+dot("$z_{k+1}$",z2,orange);
+```
+
+<!--Result:-->
+![output](assets/hobbydir.svg)
+
 ### Graphviz
 
 ```dot output=assets/graph.svg
