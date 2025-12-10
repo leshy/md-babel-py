@@ -18,7 +18,7 @@ echo "cwd: $(pwd)"
 
 <!--Result:-->
 ```
-cwd: /home/lesh/coding/md-babel-python
+cwd: /work
 ```
 
 ### Python
@@ -158,21 +158,8 @@ cube([10, 10, 10]);
 sphere(r=7);
 ```
 
-<!--Error:-->
-```
-Compiling design (CSG Products normalization)...
-Normalized CSG tree has 2 elements
-glXChooseFBConfig failed
-Can't create OpenGL OffscreenView. Code: -1.
-Geometries in cache: 2
-Geometry cache size in bytes: 33616
-CGAL Polyhedrons in cache: 0
-CGAL cache size in bytes: 0
-Total rendering time: 0:00:00.000
-/nix/store/p027746lfhhdx53jfc8rswjcx22kyz3q-xvfb-run-1+g87f6705/bin/.xvfb-run-wrapped: line 181: 2823017 Segmentation fault         (core dumped) DISPLAY=:$SERVERNUM XAUTHORITY=$AUTHFILE "$@"
-
-Exit code: 139
-```
+<!--Result:-->
+![output](assets/cube-sphere.png)
 
 ### Diagon
 
