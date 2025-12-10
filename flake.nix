@@ -95,6 +95,12 @@
             pkgs.coreutils
           ] ++ evaluatorDeps;
 
+          # Create /usr/bin/env symlink for compatibility
+          extraCommands = ''
+            mkdir -p usr/bin
+            ln -s ${pkgs.coreutils}/bin/env usr/bin/env
+          '';
+
           config = {
             Entrypoint = [ "${md-babel-py-full}/bin/md-babel-py" ];
             WorkingDir = "/work";
