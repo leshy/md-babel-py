@@ -1,0 +1,253 @@
+"""Configuration loading for md-babel-py."""
+
+import json
+import logging
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from .exceptions import ConfigError
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class SessionConfig:
+    """Session configuration for a language.
+
+    Attributes:
+        command: Command to start the REPL (e.g., ["python3", "-i"]).
+        marker: Optional custom marker command. If not set, uses built-in default.
+        prompts: Optional list of REPL prompt patterns to strip from output.
+    """
+    command: list[str]
+    marker: str | None = None
+    prompts: list[str] = field(default_factory=list)
+
+
+@dataclass
+class EvaluatorConfig:
+    """Configuration for a code block evaluator.
+
+    Attributes:
+        path: Path to the executable.
+        default_arguments: Arguments to pass to the executable.
+        session: Optional session configuration for persistent REPL execution.
+        input_extension: File extension for temp input file (e.g., ".scad").
+            If set, code is written to a temp file instead of stdin.
+            Use {input_file} placeholder in defaultArguments.
+        output_extension: File extension for temp output file (e.g., ".png").
+            If set, output is read from this file instead of stdout.
+            Use {output_file} placeholder in defaultArguments.
+        output_is_image: If True, output file is an image (result shows path).
+    """
+    path: str
+    default_arguments: list[str]
+    session: SessionConfig | None = None
+    input_extension: str | None = None
+    output_extension: str | None = None
+    output_is_image: bool = False
+
+
+@dataclass
+class Config:
+    """Full configuration.
+
+    Attributes:
+        evaluators: Mapping of language names to their evaluator configurations.
+    """
+    evaluators: dict[str, EvaluatorConfig]
+
+
+def load_config(config_path: Path | None = None) -> Config:
+    """Load configuration from file(s).
+
+    Search order:
+    1. Explicit config_path if provided
+    2. ./config.json
+    3. ~/.config/md-babel/config.json
+
+    Configs are merged, with earlier ones taking precedence.
+
+    Args:
+        config_path: Optional explicit path to a config file.
+
+    Returns:
+        Merged configuration from all found config files.
+
+    Raises:
+        ConfigError: If a config file exists but is invalid.
+    """
+    configs_to_try: list[Path] = []
+
+    if config_path:
+        configs_to_try.append(config_path)
+
+    configs_to_try.extend([
+        Path.cwd() / "config.json",
+        Path.home() / ".config" / "md-babel" / "config.json",
+    ])
+
+    merged_evaluators: dict[str, EvaluatorConfig] = {}
+
+    for path in reversed(configs_to_try):  # Process in reverse so earlier takes precedence
+        if path.exists():
+            logger.debug(f"Loading config from {path}")
+            try:
+                raw = json.loads(path.read_text())
+            except json.JSONDecodeError as e:
+                raise ConfigError(f"Invalid JSON in {path}: {e}") from e
+
+            try:
+                evaluators = _parse_evaluators(raw, path)
+                merged_evaluators.update(evaluators)
+            except ConfigError:
+                raise
+            except Exception as e:
+                raise ConfigError(f"Error parsing {path}: {e}") from e
+
+    return Config(evaluators=merged_evaluators)
+
+
+def _parse_evaluators(raw: dict[str, Any], config_path: Path) -> dict[str, EvaluatorConfig]:
+    """Parse evaluators from raw JSON config.
+
+    Args:
+        raw: Parsed JSON configuration.
+        config_path: Path to the config file (for error messages).
+
+    Returns:
+        Mapping of language names to evaluator configurations.
+
+    Raises:
+        ConfigError: If required fields are missing or invalid.
+    """
+    evaluators: dict[str, EvaluatorConfig] = {}
+
+    if "evaluators" not in raw:
+        return evaluators
+
+    if not isinstance(raw["evaluators"], dict):
+        raise ConfigError(f"{config_path}: 'evaluators' must be an object")
+
+    code_block_config = raw["evaluators"].get("codeBlock", {})
+
+    if not isinstance(code_block_config, dict):
+        raise ConfigError(f"{config_path}: 'evaluators.codeBlock' must be an object")
+
+    for lang, config in code_block_config.items():
+        if not isinstance(config, dict):
+            raise ConfigError(f"{config_path}: evaluator for '{lang}' must be an object")
+
+        # Validate required fields
+        if "path" not in config:
+            raise ConfigError(f"{config_path}: evaluator for '{lang}' missing required field 'path'")
+
+        if not isinstance(config["path"], str):
+            raise ConfigError(f"{config_path}: evaluator for '{lang}': 'path' must be a string")
+
+        # Validate optional fields
+        default_args = config.get("defaultArguments", [])
+        if not isinstance(default_args, list):
+            raise ConfigError(
+                f"{config_path}: evaluator for '{lang}': 'defaultArguments' must be an array"
+            )
+
+        # Parse session config if present
+        session = None
+        if "session" in config:
+            session = _parse_session_config(config["session"], lang, config_path)
+
+        # Parse file I/O options
+        input_ext = config.get("inputExtension")
+        if input_ext is not None and not isinstance(input_ext, str):
+            raise ConfigError(
+                f"{config_path}: evaluator for '{lang}': 'inputExtension' must be a string"
+            )
+
+        output_ext = config.get("outputExtension")
+        if output_ext is not None and not isinstance(output_ext, str):
+            raise ConfigError(
+                f"{config_path}: evaluator for '{lang}': 'outputExtension' must be a string"
+            )
+
+        output_is_image = config.get("outputIsImage", False)
+        if not isinstance(output_is_image, bool):
+            raise ConfigError(
+                f"{config_path}: evaluator for '{lang}': 'outputIsImage' must be a boolean"
+            )
+
+        evaluators[lang] = EvaluatorConfig(
+            path=config["path"],
+            default_arguments=default_args,
+            session=session,
+            input_extension=input_ext,
+            output_extension=output_ext,
+            output_is_image=output_is_image,
+        )
+
+    return evaluators
+
+
+def _parse_session_config(
+    session_raw: Any,
+    lang: str,
+    config_path: Path,
+) -> SessionConfig:
+    """Parse session configuration.
+
+    Args:
+        session_raw: Raw session configuration from JSON.
+        lang: Language name (for error messages).
+        config_path: Path to the config file (for error messages).
+
+    Returns:
+        Parsed session configuration.
+
+    Raises:
+        ConfigError: If required fields are missing or invalid.
+    """
+    if not isinstance(session_raw, dict):
+        raise ConfigError(f"{config_path}: session config for '{lang}' must be an object")
+
+    if "command" not in session_raw:
+        raise ConfigError(
+            f"{config_path}: session config for '{lang}' missing required field 'command'"
+        )
+
+    command = session_raw["command"]
+    if not isinstance(command, list) or not all(isinstance(c, str) for c in command):
+        raise ConfigError(
+            f"{config_path}: session config for '{lang}': 'command' must be an array of strings"
+        )
+
+    if len(command) == 0:
+        raise ConfigError(
+            f"{config_path}: session config for '{lang}': 'command' must not be empty"
+        )
+
+    # Parse optional prompts
+    prompts = session_raw.get("prompts", [])
+    if not isinstance(prompts, list) or not all(isinstance(p, str) for p in prompts):
+        raise ConfigError(
+            f"{config_path}: session config for '{lang}': 'prompts' must be an array of strings"
+        )
+
+    return SessionConfig(
+        command=command,
+        marker=session_raw.get("marker"),
+        prompts=prompts,
+    )
+
+
+def get_evaluator(config: Config, language: str) -> EvaluatorConfig | None:
+    """Get evaluator config for a language.
+
+    Args:
+        config: The loaded configuration.
+        language: The language to get the evaluator for.
+
+    Returns:
+        The evaluator configuration, or None if not configured.
+    """
+    return config.evaluators.get(language)

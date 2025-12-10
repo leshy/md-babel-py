@@ -1,0 +1,186 @@
+"""Markdown parser to find fenced code blocks."""
+
+import re
+from dataclasses import dataclass
+
+
+@dataclass
+class CodeBlock:
+    """A fenced code block in a markdown document."""
+    language: str
+    code: str
+    session: str | None  # None means isolated execution
+    expected_error: bool  # If True, expect this block to fail
+    skip: bool  # If True, don't evaluate this block
+    no_result: bool  # If True, evaluate but don't insert result
+    start_line: int  # 1-indexed, line of opening fence
+    end_line: int  # 1-indexed, line of closing fence
+    info_string: str  # Full info string after opening fence
+    params: dict[str, str]  # Custom parameters (key=value pairs from info string)
+
+
+@dataclass
+class ResultBlock:
+    """An existing result block (<!--Result:--> or <!--Error:-->)."""
+    kind: str  # "Result" or "Error"
+    content: str
+    start_line: int
+    end_line: int
+
+
+# Regex to match fenced code blocks
+# Captures: opening fence (backticks/tildes), info string, code content
+FENCE_PATTERN = re.compile(
+    r'^(?P<indent>[ \t]*)(?P<fence>`{3,}|~{3,})(?P<info>[^\n]*)\n'
+    r'(?P<code>.*?)'
+    r'^(?P=indent)(?P=fence)[ \t]*$',
+    re.MULTILINE | re.DOTALL
+)
+
+# Pattern for result/error blocks
+RESULT_PATTERN = re.compile(
+    r'^<!--(Result|Error):-->\n```[^\n]*\n(.*?)^```[ \t]*$',
+    re.MULTILINE | re.DOTALL
+)
+
+
+def parse_info_string(info: str) -> tuple[str, dict[str, str], set[str]]:
+    """Parse info string into language, metadata dict, and flags set.
+
+    Example: "python session=main expected-error" -> ("python", {"session": "main"}, {"expected-error"})
+    """
+    parts = info.strip().split()
+    if not parts:
+        return "", {}, set()
+
+    language = parts[0]
+    metadata = {}
+    flags = set()
+
+    for part in parts[1:]:
+        if "=" in part:
+            key, value = part.split("=", 1)
+            metadata[key] = value
+        else:
+            flags.add(part)
+
+    return language, metadata, flags
+
+
+def find_code_blocks(content: str) -> list[CodeBlock]:
+    """Find all fenced code blocks in markdown content."""
+    blocks = []
+
+    for match in FENCE_PATTERN.finditer(content):
+        info_string = match.group('info')
+        code = match.group('code')
+
+        language, metadata, flags = parse_info_string(info_string)
+        if not language:
+            continue  # Skip blocks without language
+
+        # Calculate line numbers (1-indexed)
+        start_pos = match.start()
+        end_pos = match.end()
+        start_line = content[:start_pos].count('\n') + 1
+        end_line = content[:end_pos].count('\n') + 1
+
+        # Separate reserved metadata from custom params
+        reserved_keys = {"session"}
+        params = {k: v for k, v in metadata.items() if k not in reserved_keys}
+
+        blocks.append(CodeBlock(
+            language=language,
+            code=code.rstrip('\n'),
+            session=metadata.get("session"),
+            expected_error="expected-error" in flags,
+            skip="skip" in flags,
+            no_result="no-result" in flags,
+            start_line=start_line,
+            end_line=end_line,
+            info_string=info_string.strip(),
+            params=params,
+        ))
+
+    return blocks
+
+
+def find_result_blocks(content: str) -> list[ResultBlock]:
+    """Find all result/error blocks in markdown content."""
+    blocks = []
+
+    for match in RESULT_PATTERN.finditer(content):
+        kind = match.group(1)
+        result_content = match.group(2)
+
+        start_pos = match.start()
+        end_pos = match.end()
+        start_line = content[:start_pos].count('\n') + 1
+        end_line = content[:end_pos].count('\n') + 1
+
+        blocks.append(ResultBlock(
+            kind=kind,
+            content=result_content.rstrip('\n'),
+            start_line=start_line,
+            end_line=end_line,
+        ))
+
+    return blocks
+
+
+def find_block_result_range(content: str, block: CodeBlock) -> tuple[int, int] | None:
+    """Find the range of any existing result/error block following a code block.
+
+    Returns (start_line, end_line) of the result block(s), or None if no result exists.
+    """
+    lines = content.split('\n')
+    line_idx = block.end_line  # 0-indexed position after the block
+
+    # Skip blank lines
+    while line_idx < len(lines) and not lines[line_idx].strip():
+        line_idx += 1
+
+    if line_idx >= len(lines):
+        return None
+
+    # Check for result/error comment
+    result_start = None
+    result_end = None
+
+    while line_idx < len(lines):
+        line = lines[line_idx]
+
+        if line.strip() in ('<!--Result:-->', '<!--Error:-->'):
+            if result_start is None:
+                result_start = line_idx + 1  # Convert to 1-indexed
+
+            # Find the code block that follows
+            if line_idx + 1 < len(lines) and lines[line_idx + 1].startswith('```'):
+                # Find closing fence
+                fence_line = line_idx + 1
+                for i in range(fence_line + 1, len(lines)):
+                    if lines[i].strip() == '```':
+                        result_end = i + 1  # 1-indexed, inclusive
+                        line_idx = i + 1
+                        break
+                else:
+                    # No closing fence found
+                    break
+            else:
+                break
+
+            # Check for another result/error block
+            while line_idx < len(lines) and not lines[line_idx].strip():
+                line_idx += 1
+
+            if line_idx >= len(lines):
+                break
+
+            if lines[line_idx].strip() not in ('<!--Result:-->', '<!--Error:-->'):
+                break
+        else:
+            break
+
+    if result_start and result_end:
+        return (result_start, result_end)
+    return None

@@ -1,0 +1,187 @@
+"""Execute code blocks."""
+
+import logging
+import os
+import subprocess
+import tempfile
+from pathlib import Path
+
+from .config import Config, EvaluatorConfig, get_evaluator
+from .parser import CodeBlock
+from .session import SessionManager
+from .types import ExecutionResult
+
+logger = logging.getLogger(__name__)
+
+
+def substitute_params(
+    args: list[str],
+    params: dict[str, str],
+    input_file: str | None = None,
+    output_file: str | None = None,
+) -> list[str]:
+    """Substitute {param} placeholders in arguments with values from params.
+
+    Args:
+        args: List of command arguments, may contain {param} placeholders.
+        params: Dictionary of parameter values from code block.
+        input_file: Path to input file (substitutes {input_file}).
+        output_file: Path to output file (substitutes {output_file}).
+
+    Returns:
+        List of arguments with placeholders substituted.
+
+    Special placeholders:
+        {input_file}: Path to temp file containing code block content.
+        {output_file}: Path to temp file for command output.
+
+    Example:
+        >>> substitute_params(["--mode", "{mode}"], {"mode": "GraphDAG"})
+        ["--mode", "GraphDAG"]
+    """
+    result = []
+    for arg in args:
+        substituted = arg
+        # Substitute custom params
+        for key, value in params.items():
+            substituted = substituted.replace(f"{{{key}}}", value)
+        # Substitute special file placeholders
+        if input_file:
+            substituted = substituted.replace("{input_file}", input_file)
+        if output_file:
+            substituted = substituted.replace("{output_file}", output_file)
+        result.append(substituted)
+    return result
+
+
+class Executor:
+    """Execute code blocks, handling both isolated and session-based execution."""
+
+    def __init__(self, config: Config):
+        self.config = config
+        self.session_manager = SessionManager()
+
+    def execute(self, block: CodeBlock) -> ExecutionResult:
+        """Execute a code block and return the result."""
+        evaluator = get_evaluator(self.config, block.language)
+
+        if evaluator is None:
+            return ExecutionResult(
+                stdout="",
+                stderr="",
+                success=False,
+                error_message=f"No evaluator configured for language: {block.language}",
+            )
+
+        if block.session and evaluator.session:
+            return self._execute_session(block, evaluator)
+        else:
+            return self._execute_isolated(block, evaluator)
+
+    def _execute_isolated(self, block: CodeBlock, evaluator: EvaluatorConfig) -> ExecutionResult:
+        """Execute a code block in isolation (subprocess)."""
+        input_file_path: str | None = None
+        output_file_path: str | None = None
+        temp_files: list[str] = []
+
+        try:
+            # Create temp input file if needed
+            if evaluator.input_extension:
+                fd, input_file_path = tempfile.mkstemp(suffix=evaluator.input_extension)
+                temp_files.append(input_file_path)
+                with os.fdopen(fd, 'w') as f:
+                    f.write(block.code)
+                logger.debug(f"Wrote code to temp file: {input_file_path}")
+
+            # Create temp output file if needed
+            if evaluator.output_extension:
+                fd, output_file_path = tempfile.mkstemp(suffix=evaluator.output_extension)
+                os.close(fd)  # Close fd, command will write to it
+                temp_files.append(output_file_path)
+                logger.debug(f"Output file: {output_file_path}")
+
+            # Substitute params in arguments
+            args = substitute_params(
+                evaluator.default_arguments,
+                block.params,
+                input_file=input_file_path,
+                output_file=output_file_path,
+            )
+            cmd = [evaluator.path] + args
+            logger.debug(f"Executing command: {cmd}")
+
+            # Determine stdin
+            stdin_input = None if evaluator.input_extension else block.code
+
+            result = subprocess.run(
+                cmd,
+                input=stdin_input,
+                capture_output=True,
+                text=True,
+                timeout=60,  # Longer timeout for tools like openscad
+            )
+
+            if result.returncode != 0:
+                return ExecutionResult(
+                    stdout=result.stdout,
+                    stderr=result.stderr,
+                    success=False,
+                    error_message=f"Exit code: {result.returncode}",
+                )
+
+            # Read output from file or stdout
+            if output_file_path and os.path.exists(output_file_path):
+                if evaluator.output_is_image:
+                    # For images, return the path (will be embedded in result)
+                    stdout = f"![output]({output_file_path})"
+                    # Don't delete output file - it's the result!
+                    temp_files.remove(output_file_path)
+                else:
+                    # Read text output from file
+                    stdout = Path(output_file_path).read_text()
+            else:
+                stdout = result.stdout
+
+            return ExecutionResult(
+                stdout=stdout,
+                stderr=result.stderr,
+                success=True,
+            )
+        except subprocess.TimeoutExpired:
+            return ExecutionResult(
+                stdout="",
+                stderr="",
+                success=False,
+                error_message="Execution timed out after 60 seconds",
+            )
+        except Exception as e:
+            logger.exception("Execution failed")
+            return ExecutionResult(
+                stdout="",
+                stderr="",
+                success=False,
+                error_message=str(e),
+            )
+        finally:
+            # Clean up temp files (but not output images)
+            for temp_path in temp_files:
+                try:
+                    os.unlink(temp_path)
+                except OSError:
+                    pass
+
+    def _execute_session(self, block: CodeBlock, evaluator: EvaluatorConfig) -> ExecutionResult:
+        """Execute a code block in a persistent session."""
+        # This is only called when evaluator.session is not None (checked in execute())
+        assert evaluator.session is not None
+        session_key = (block.language, block.session)
+        return self.session_manager.execute(
+            session_key=session_key,
+            code=block.code,
+            language=block.language,
+            session_config=evaluator.session,
+        )
+
+    def cleanup(self) -> None:
+        """Clean up all sessions."""
+        self.session_manager.cleanup()
