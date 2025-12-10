@@ -50,7 +50,7 @@ sphere(r=7);
 <!--Result:-->
 ![output](assets/cube-sphere.png)
 
-### Diagon
+### Diagon Math
 
 ```diagon mode=Math
 1 + 1/2 + sum(i,0,10)
@@ -65,6 +65,33 @@ sphere(r=7);
     2   ‾‾‾  
          0
 ```
+
+### Diagon GraphDAG
+
+```diagon mode=GraphDAG
+Power -> Moisture Sensor
+Water -> Nozzle
+Nozzle -> Plant
+Moisture Sensor -> Plant
+Plant -> Drain Water
+```
+
+<!--Result:-->
+```
+┌─────┐┌───────────┐     
+│Power││Water      │     
+└┬────┘└──────────┬┘     
+┌▽──────────────┐┌▽─────┐
+│Moisture Sensor││Nozzle│
+└┬──────────────┘└┬─────┘
+┌▽────────────────▽┐     
+│Plant             │     
+└┬─────────────────┘     
+┌▽──────────┐            
+│Drain Water│            
+└───────────┘
+```
+
 
 ## Quick Start
 
@@ -220,6 +247,7 @@ Variables persist across blocks in the same session:
 x = 10
 y = 20
 ```
+
 
 
 ```python session=demo
