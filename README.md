@@ -2,6 +2,8 @@
 
 Execute code blocks in markdown files and insert the results.
 
+<video src="assets/screencast.mp4" controls width="100%"></video>
+
 **Use cases:**
 - Keep documentation examples up-to-date automatically
 - Validate code snippets in docs actually work
@@ -105,9 +107,9 @@ Py: oval "Python" fit
 
 # Merge back
 X: dot at (Py.e.x + 0.3in, Node.e.y) invisible
-arrow from Sh.e right until even with X then down to X
+line from Sh.e right until even with X then down to X
 line from Node.e to X
-arrow from Py.e right until even with X then up to X
+line from Py.e right until even with X then up to X
 Out: file "README.md" fit with .w at (X.x + 0.3in, X.y)
 arrow from X to Out.w
 ```
