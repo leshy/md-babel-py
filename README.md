@@ -72,7 +72,7 @@ CI check that docs are up to date:
 ### Shell
 
 ```sh
-echo "Current directory: $(pwd)"
+echo "cwd: $(pwd)"
 ```
 
 <!--Result:-->
