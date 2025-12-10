@@ -58,7 +58,8 @@ Node version: v24.11.1
 
 ### Matplotlib
 
-```matplotlib output=assets/matplotlib-demo.svg
+```python output=assets/matplotlib-demo.svg
+import matplotlib.pyplot as plt
 import numpy as np
 plt.style.use('dark_background')
 x = np.linspace(0, 4 * np.pi, 200)
@@ -69,6 +70,7 @@ plt.xlabel('x')
 plt.ylabel('y')
 plt.legend()
 plt.grid(alpha=0.3)
+plt.savefig('{output}', transparent=True)
 ```
 
 <!--Result:-->
@@ -349,6 +351,7 @@ Variables persist across blocks in the same session:
 x = 10
 y = 20
 ```
+
 
 
 

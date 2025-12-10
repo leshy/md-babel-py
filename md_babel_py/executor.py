@@ -80,8 +80,15 @@ class Executor:
         temp_files: list[str] = []
 
         try:
+            # Merge default params with block params (block params override defaults)
+            params = {**evaluator.default_params, **block.params}
+
             # Apply prefix/suffix to code
             code = evaluator.prefix + block.code + evaluator.suffix
+
+            # Substitute params in code (e.g., {output} placeholder)
+            for key, value in params.items():
+                code = code.replace(f"{{{key}}}", value)
 
             # Create temp input file if needed
             if evaluator.input_extension:
@@ -97,9 +104,6 @@ class Executor:
                 # Ensure parent directory exists
                 Path(output_file_path).parent.mkdir(parents=True, exist_ok=True)
                 logger.debug(f"Output file: {output_file_path}")
-
-            # Merge default params with block params (block params override defaults)
-            params = {**evaluator.default_params, **block.params}
 
             # Substitute params in arguments
             args = substitute_params(
