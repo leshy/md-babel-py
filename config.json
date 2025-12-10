@@ -40,6 +40,14 @@
           "command": ["node"]
         }
       },
+      "matplotlib": {
+        "path": "sh",
+        "defaultArguments": [
+          "-c",
+          "python3 -c \"import matplotlib.pyplot as plt; exec(open('{input_file}').read()); plt.savefig('{output}', transparent=True)\""
+        ],
+        "inputExtension": ".py"
+      },
       "pikchr": {
         "path": "sh",
         "defaultArguments": [

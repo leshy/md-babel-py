@@ -56,6 +56,24 @@ Hello from Node.js
 Node version: v24.11.1
 ```
 
+### Matplotlib
+
+```matplotlib output=assets/matplotlib-demo.svg
+import numpy as np
+plt.style.use('dark_background')
+x = np.linspace(0, 4 * np.pi, 200)
+plt.figure(figsize=(8, 4))
+plt.plot(x, np.sin(x), label='sin(x)', linewidth=2)
+plt.plot(x, np.cos(x), label='cos(x)', linewidth=2)
+plt.xlabel('x')
+plt.ylabel('y')
+plt.legend()
+plt.grid(alpha=0.3)
+```
+
+<!--Result:-->
+![output](assets/matplotlib-demo.svg)
+
 ### Pikchr
 
 SQLite's diagram language for technical documentation:
@@ -331,6 +349,7 @@ Variables persist across blocks in the same session:
 x = 10
 y = 20
 ```
+
 
 
 

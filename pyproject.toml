@@ -18,6 +18,7 @@ md-babel-py = "md_babel_py.cli:main"
 
 [project.optional-dependencies]
 dev = ["pytest", "ruff", "mypy"]
+matplotlib = ["matplotlib", "numpy"]
 
 [tool.setuptools.packages.find]
 include = ["md_babel_py*"]
