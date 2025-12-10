@@ -11,6 +11,8 @@ on:
 jobs:
   update-docs:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     # Skip if docker build failed, or if this is a push that will trigger docker build
     if: |
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
