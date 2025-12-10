@@ -2,7 +2,7 @@
 
 Execute code blocks in markdown files and insert the results.
 
-<video src="assets/screencast.mp4" controls width="100%"></video>
+![Demo](assets/screencast.gif)
 
 **Use cases:**
 - Keep documentation examples up-to-date automatically
