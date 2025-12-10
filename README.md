@@ -186,7 +186,7 @@ A -> C
 
 <!--Result:-->
 ```
-bla
+bla x
 ```
 
 ## Install
