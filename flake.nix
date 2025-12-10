@@ -95,16 +95,19 @@
             pkgs.coreutils
           ] ++ evaluatorDeps;
 
-          # Create /usr/bin/env symlink for compatibility
+          # Create /usr/bin/env symlink and config directory
           extraCommands = ''
             mkdir -p usr/bin
             ln -s ${pkgs.coreutils}/bin/env usr/bin/env
+            mkdir -p root/.config/md-babel
+            cp ${./config.json} root/.config/md-babel/config.json
           '';
 
           config = {
             Entrypoint = [ "${md-babel-py-full}/bin/md-babel-py" ];
             WorkingDir = "/work";
             Env = [
+              "HOME=/root"
               "FONTCONFIG_FILE=${pkgs.fontconfig.out}/etc/fonts/fonts.conf"
             ];
           };

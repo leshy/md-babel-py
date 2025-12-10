@@ -2,7 +2,14 @@
 
 Execute code blocks in markdown files with session support.
 
+## Local Install
+
 ```sh skip
+# Using uv (recommended)
+uv pip install md-babel-py
+md-babel-py run README.md --stdout
+
+# Or with pip
 pip install md-babel-py
 ```
 
