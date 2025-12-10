@@ -36,10 +36,6 @@ class EvaluatorConfig:
         input_extension: File extension for temp input file (e.g., ".scad").
             If set, code is written to a temp file instead of stdin.
             Use {input_file} placeholder in defaultArguments.
-        output_extension: File extension for temp output file (e.g., ".png").
-            If set, output is read from this file instead of stdout.
-            Use {output_file} placeholder in defaultArguments.
-        output_is_image: If True, output file is an image (result shows path).
         default_params: Default parameter values for {key} substitution.
             Can be overridden by params in code block info string.
         prefix: String to prepend to code before execution.
@@ -49,8 +45,6 @@ class EvaluatorConfig:
     default_arguments: list[str]
     session: SessionConfig | None = None
     input_extension: str | None = None
-    output_extension: str | None = None
-    output_is_image: bool = False
     default_params: dict[str, str] = field(default_factory=dict)
     prefix: str = ""
     suffix: str = ""
@@ -165,23 +159,11 @@ def _parse_evaluators(raw: dict[str, Any], config_path: Path) -> dict[str, Evalu
         if "session" in config:
             session = _parse_session_config(config["session"], lang, config_path)
 
-        # Parse file I/O options
+        # Parse input extension option
         input_ext = config.get("inputExtension")
         if input_ext is not None and not isinstance(input_ext, str):
             raise ConfigError(
                 f"{config_path}: evaluator for '{lang}': 'inputExtension' must be a string"
-            )
-
-        output_ext = config.get("outputExtension")
-        if output_ext is not None and not isinstance(output_ext, str):
-            raise ConfigError(
-                f"{config_path}: evaluator for '{lang}': 'outputExtension' must be a string"
-            )
-
-        output_is_image = config.get("outputIsImage", False)
-        if not isinstance(output_is_image, bool):
-            raise ConfigError(
-                f"{config_path}: evaluator for '{lang}': 'outputIsImage' must be a boolean"
             )
 
         # Parse default params
@@ -214,8 +196,6 @@ def _parse_evaluators(raw: dict[str, Any], config_path: Path) -> dict[str, Evalu
             default_arguments=default_args,
             session=session,
             input_extension=input_ext,
-            output_extension=output_ext,
-            output_is_image=output_is_image,
             default_params=default_params,
             prefix=prefix,
             suffix=suffix,

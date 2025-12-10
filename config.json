@@ -22,19 +22,12 @@
         ]
       },
       "openscad": {
-        "path": "xvfb-run",
+        "path": "sh",
         "defaultArguments": [
-          "-a", "openscad",
-          "-o", "{output_file}",
-          "--colorscheme", "{colorscheme}",
-          "--imgsize", "{size}",
-          "--projection", "o",
-          "--viewall",
-          "{input_file}"
+          "-c",
+          "xvfb-run -a openscad -o {output} --colorscheme '{colorscheme}' --imgsize {size} --projection o --viewall {input_file} && magick {output} -transparent '#1D1F21' {output}"
         ],
         "inputExtension": ".scad",
-        "outputExtension": ".png",
-        "outputIsImage": true,
         "defaultParams": {
           "colorscheme": "Tomorrow Night",
           "size": "400,400"
@@ -44,10 +37,8 @@
         "path": "dot",
         "defaultArguments": [
           "-Tsvg",
-          "-o", "{output_file}"
+          "-o", "{output}"
         ],
-        "outputExtension": ".svg",
-        "outputIsImage": true,
         "prefix": "digraph { rankdir=LR; bgcolor=transparent; node [shape=egg height=\"0\" margin=\"0.1,0.05\" fontname=terminus fontsize=13 fontcolor=white color=\"#ffffff99\" style=\"solid\"] edge [color=\"#ffffff\" fillcolor=\"transparent\" style=\"solid\"] ",
         "suffix": "}"
       }

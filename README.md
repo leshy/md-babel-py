@@ -6,6 +6,66 @@ Execute code blocks in markdown files with session support.
 pip install md-babel-py
 ```
 
+## Languages
+
+### Shell
+
+```sh
+echo "Current directory: $(pwd)"
+```
+
+<!--Result:-->
+```
+Current directory: /home/lesh/coding/md-babel-python
+```
+
+### Python
+
+```python
+print("Hello, world!")
+```
+
+<!--Result:-->
+```
+Hello, world!
+```
+
+### Graphviz
+
+```dot output=assets/graph.svg
+A -> B -> C
+A -> C
+```
+
+<!--Result:-->
+![output](assets/graph.svg)
+
+### OpenSCAD
+
+```openscad output=assets/cube-sphere.png
+cube([10, 10, 10]);
+sphere(r=7);
+```
+
+<!--Result:-->
+![output](assets/cube-sphere.png)
+
+### Diagon
+
+```diagon mode=Math
+1 + 1/2 + sum(i,0,10)
+```
+
+<!--Result:-->
+```
+        10   
+        ___  
+    1   ╲    
+1 + ─ + ╱   i
+    2   ‾‾‾  
+         0
+```
+
 ## Quick Start
 
 Run all code blocks in a markdown file:
@@ -152,17 +212,6 @@ For tools that read from files instead of stdin, or output to files:
 
 ## Examples
 
-### Basic Execution
-
-```python
-print("Hello, world!")
-```
-
-<!--Result:-->
-```
-Hello, world!
-```
-
 ### Session State
 
 Variables persist across blocks in the same session:
@@ -171,9 +220,6 @@ Variables persist across blocks in the same session:
 x = 10
 y = 20
 ```
-
-
-
 
 
 ```python session=demo
@@ -201,39 +247,6 @@ ValueError: This error is expected
 
 Exit code: 1
 ```
-
-### Shell Commands
-
-```sh
-echo "Current directory: $(pwd)"
-```
-
-<!--Result:-->
-```
-Current directory: /home/lesh/coding/md-babel-python
-```
-
-### OpenSCAD (File-based Output)
-
-Generate 3D renderings. Use `output=path` to specify the output file:
-
-```openscad output=assets/cube-sphere.png
-cube([10, 10, 10]);
-sphere(r=7);
-```
-
-<!--Result:-->
-![output](assets/cube-sphere.png)
-
-### Graphviz
-
-```dot output=assets/graph.svg
-A -> B -> C
-A -> C
-```
-
-<!--Result:-->
-![output](assets/graph.svg)
 
 ## Exit Codes
 

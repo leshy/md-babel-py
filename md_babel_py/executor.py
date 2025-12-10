@@ -18,7 +18,6 @@ def substitute_params(
     args: list[str],
     params: dict[str, str],
     input_file: str | None = None,
-    output_file: str | None = None,
 ) -> list[str]:
     """Substitute {param} placeholders in arguments with values from params.
 
@@ -26,14 +25,12 @@ def substitute_params(
         args: List of command arguments, may contain {param} placeholders.
         params: Dictionary of parameter values from code block.
         input_file: Path to input file (substitutes {input_file}).
-        output_file: Path to output file (substitutes {output_file}).
 
     Returns:
         List of arguments with placeholders substituted.
 
     Special placeholders:
         {input_file}: Path to temp file containing code block content.
-        {output_file}: Path to temp file for command output.
 
     Example:
         >>> substitute_params(["--mode", "{mode}"], {"mode": "GraphDAG"})
@@ -45,11 +42,9 @@ def substitute_params(
         # Substitute custom params
         for key, value in params.items():
             substituted = substituted.replace(f"{{{key}}}", value)
-        # Substitute special file placeholders
+        # Substitute special input_file placeholder
         if input_file:
             substituted = substituted.replace("{input_file}", input_file)
-        if output_file:
-            substituted = substituted.replace("{output_file}", output_file)
         result.append(substituted)
     return result
 
@@ -96,17 +91,11 @@ class Executor:
                     f.write(code)
                 logger.debug(f"Wrote code to temp file: {input_file_path}")
 
-            # Create output file if needed
-            if evaluator.output_extension:
-                # Check if output path specified in params
-                if "output" in block.params:
-                    output_file_path = block.params["output"]
-                    # Ensure parent directory exists
-                    Path(output_file_path).parent.mkdir(parents=True, exist_ok=True)
-                else:
-                    fd, output_file_path = tempfile.mkstemp(suffix=evaluator.output_extension)
-                    os.close(fd)  # Close fd, command will write to it
-                    temp_files.append(output_file_path)
+            # Get output file from params if specified
+            if "output" in block.params:
+                output_file_path = block.params["output"]
+                # Ensure parent directory exists
+                Path(output_file_path).parent.mkdir(parents=True, exist_ok=True)
                 logger.debug(f"Output file: {output_file_path}")
 
             # Merge default params with block params (block params override defaults)
@@ -117,7 +106,6 @@ class Executor:
                 evaluator.default_arguments,
                 params,
                 input_file=input_file_path,
-                output_file=output_file_path,
             )
             cmd = [evaluator.path] + args
             logger.debug(f"Executing command: {cmd}")
@@ -143,15 +131,8 @@ class Executor:
 
             # Read output from file or stdout
             if output_file_path and os.path.exists(output_file_path):
-                if evaluator.output_is_image:
-                    # For images, return the path (will be embedded in result)
-                    stdout = f"![output]({output_file_path})"
-                    # Don't delete output file - it's the result!
-                    if output_file_path in temp_files:
-                        temp_files.remove(output_file_path)
-                else:
-                    # Read text output from file
-                    stdout = Path(output_file_path).read_text()
+                # Return image reference for the output file
+                stdout = f"![output]({output_file_path})"
             else:
                 stdout = result.stdout
 
