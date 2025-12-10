@@ -172,9 +172,6 @@ x = 10
 y = 20
 ```
 
-<!--Result:-->
-```
-```
 
 ```python session=demo
 print(f"x + y = {x + y}")
@@ -223,9 +220,7 @@ sphere(r=7);
 ```
 
 <!--Result:-->
-```
 ![output](assets/cube-sphere.png)
-```
 
 ### Graphviz
 
@@ -237,9 +232,7 @@ digraph G {
 ```
 
 <!--Result:-->
-```
 ![output](assets/graph.svg)
-```
 
 ## Exit Codes
 

@@ -54,17 +54,26 @@ def build_result_block(result: ExecutionResult) -> list[str]:
 
     Only includes stderr/error block if the execution failed (success=False).
     Successful executions only show stdout.
+    Image outputs (starting with ![) are not wrapped in code blocks.
     """
     blocks: list[str] = []
 
     # Add stdout as Result block
-    if result.stdout.strip():
-        blocks.extend([
-            '<!--Result:-->',
-            '```',
-            result.stdout.rstrip(),
-            '```',
-        ])
+    stdout = result.stdout.strip()
+    if stdout:
+        # Check if output is an image reference (don't wrap in code block)
+        if stdout.startswith('!['):
+            blocks.extend([
+                '<!--Result:-->',
+                stdout,
+            ])
+        else:
+            blocks.extend([
+                '<!--Result:-->',
+                '```',
+                result.stdout.rstrip(),
+                '```',
+            ])
 
     # Only add stderr/error block if execution failed
     if not result.success:
@@ -82,13 +91,5 @@ def build_result_block(result: ExecutionResult) -> list[str]:
                 error_content,
                 '```',
             ])
-
-    # If no output at all, add empty result
-    if not blocks:
-        blocks.extend([
-            '<!--Result:-->',
-            '```',
-            '```',
-        ])
 
     return blocks
