@@ -1,14 +1,15 @@
 name: Update Docs
 
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_run:
+    workflows: ["Build and Push Docker Image"]
+    types: [completed]
     branches: [main]
 
 jobs:
   update-docs:
     runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
       - uses: actions/checkout@v4
 

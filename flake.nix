@@ -32,6 +32,12 @@
           };
         };
 
+        # Python with matplotlib for code blocks
+        pythonWithPackages = pkgs.python312.withPackages (ps: [
+          ps.matplotlib
+          ps.numpy
+        ]);
+
         # All evaluator dependencies
         evaluatorDeps = with pkgs; [
           # Core
@@ -39,7 +45,7 @@
           coreutils
 
           # Languages
-          python312
+          pythonWithPackages
           nodejs
 
           # Graphics tools
