@@ -6,6 +6,67 @@ Execute code blocks in markdown files with session support.
 pip install md-babel-py
 ```
 
+## Docker
+
+```sh skip
+# Run on a file and print to stdout
+docker run -v $(pwd):/work lesh/md-babel-py:main run /work/README.md --stdout
+
+# Edit file in-place
+docker run -v $(pwd):/work lesh/md-babel-py:main run /work/README.md
+```
+
+## Nix
+
+```sh skip
+# Run directly from GitHub
+nix run github:leshy/md-babel-py -- run README.md --stdout
+
+# Or clone and run locally
+nix run . -- run README.md --stdout
+```
+
+## GitHub Action
+
+Use in your workflows to execute code blocks in markdown files:
+
+```yaml skip
+- uses: leshy/md-babel-py@main
+  with:
+    files: 'README.md docs/*.md'
+```
+
+### Inputs
+
+| Input | Description | Default |
+|-------|-------------|---------|
+| `files` | Markdown files to process (glob patterns supported) | required |
+| `args` | Additional arguments for md-babel-py | `''` |
+| `fail-on-change` | Fail if files were modified (for CI checks) | `false` |
+
+### Examples
+
+Update docs and commit changes:
+
+```yaml skip
+- uses: leshy/md-babel-py@main
+  with:
+    files: '*.md docs/**/*.md'
+
+- uses: stefanzweifel/git-auto-commit-action@v5
+  with:
+    commit_message: 'Update markdown code block results'
+```
+
+CI check that docs are up to date:
+
+```yaml skip
+- uses: leshy/md-babel-py@main
+  with:
+    files: 'README.md'
+    fail-on-change: 'true'
+```
+
 ## Languages
 
 ### Shell
