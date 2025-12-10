@@ -11,7 +11,13 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
 
-        # Python package
+        # Python with matplotlib for code blocks
+        pythonWithPackages = pkgs.python312.withPackages (ps: [
+          ps.matplotlib
+          ps.numpy
+        ]);
+
+        # Python package - minimal, without propagated deps polluting PATH
         md-babel-py = pkgs.python312Packages.buildPythonApplication {
           pname = "md-babel-py";
           version = "0.1.0";
@@ -20,23 +26,14 @@
 
           nativeBuildInputs = [ pkgs.python312Packages.setuptools ];
 
-          # Optional matplotlib support
-          propagatedBuildInputs = with pkgs.python312Packages; [
-            matplotlib
-            numpy
-          ];
+          # Don't wrap - we'll do our own wrapping
+          dontWrapPythonPrograms = true;
 
           meta = {
             description = "Execute code blocks in markdown files with session support";
             license = pkgs.lib.licenses.mit;
           };
         };
-
-        # Python with matplotlib for code blocks
-        pythonWithPackages = pkgs.python312.withPackages (ps: [
-          ps.matplotlib
-          ps.numpy
-        ]);
 
         # All evaluator dependencies
         evaluatorDeps = with pkgs; [
@@ -59,14 +56,15 @@
           xvfb-run
         ];
 
-        # Runtime wrapper that includes all evaluators in PATH
+        # Runtime wrapper with controlled PATH - pythonWithPackages first
         md-babel-py-full = pkgs.symlinkJoin {
           name = "md-babel-py-full";
           paths = [ md-babel-py ];
           nativeBuildInputs = [ pkgs.makeWrapper ];
           postBuild = ''
             wrapProgram $out/bin/md-babel-py \
-              --prefix PATH : ${pkgs.lib.makeBinPath evaluatorDeps}
+              --set PATH ${pkgs.lib.makeBinPath ([ pythonWithPackages ] ++ evaluatorDeps)} \
+              --set PYTHONPATH ${md-babel-py}/${pkgs.python312.sitePackages}
           '';
         };
 
