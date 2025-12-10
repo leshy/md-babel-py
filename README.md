@@ -69,27 +69,21 @@ sphere(r=7);
 ### Diagon GraphDAG
 
 ```diagon mode=GraphDAG
-Power -> Moisture Sensor
-Water -> Nozzle
-Nozzle -> Plant
-Moisture Sensor -> Plant
-Plant -> Drain Water
+A -> B -> C
+A -> C
 ```
 
 <!--Result:-->
 ```
-┌─────┐┌───────────┐     
-│Power││Water      │     
-└┬────┘└──────────┬┘     
-┌▽──────────────┐┌▽─────┐
-│Moisture Sensor││Nozzle│
-└┬──────────────┘└┬─────┘
-┌▽────────────────▽┐     
-│Plant             │     
-└┬─────────────────┘     
-┌▽──────────┐            
-│Drain Water│            
-└───────────┘
+┌───┐
+│A  │
+└┬─┬┘
+ │┌▽┐
+ ││B│
+ │└┬┘
+┌▽─▽┐
+│C  │
+└───┘
 ```
 
 
@@ -247,6 +241,7 @@ Variables persist across blocks in the same session:
 x = 10
 y = 20
 ```
+
 
 
 
