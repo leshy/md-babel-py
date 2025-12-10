@@ -33,6 +33,13 @@
           "size": "400,400"
         }
       },
+      "node": {
+        "path": "/usr/bin/env",
+        "defaultArguments": ["node"],
+        "session": {
+          "command": ["node"]
+        }
+      },
       "dot": {
         "path": "dot",
         "defaultArguments": [

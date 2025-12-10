@@ -43,6 +43,19 @@ hello world again
 ```
 
 
+### Node.js
+
+```node
+console.log("Hello from Node.js");
+console.log(`Node version: ${process.version}`);
+```
+
+<!--Result:-->
+```
+Hello from Node.js
+Node version: v24.11.1
+```
+
 ### Graphviz
 
 ```dot output=assets/graph.svg
