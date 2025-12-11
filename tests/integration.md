@@ -37,3 +37,19 @@ z = y + 10
 # Should see z from previous block
 print(f"z is {z}")
 ```
+
+## Graphviz (raw mode)
+
+```graphviz output=tests/output/graphviz-basic.svg
+digraph {
+  rankdir=LR
+  A -> B -> C
+}
+```
+
+```graphviz output=tests/output/graphviz-args.svg args=-Grankdir=TB
+digraph {
+  A -> B -> C
+  B -> D
+}
+```

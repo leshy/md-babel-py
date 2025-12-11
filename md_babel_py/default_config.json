@@ -46,7 +46,7 @@
         "path": "sh",
         "defaultArguments": [
           "-c",
-          "pikchr --svg-only {input_file} > {output}"
+          "out=$(pikchr --svg-only {input_file}) && echo \"$out\" > {output} || { echo \"$out\" >&2; exit 1; }"
         ],
         "inputExtension": ".pikchr"
       },
@@ -66,6 +66,18 @@
         ],
         "prefix": "digraph { rankdir=LR; bgcolor=transparent; node [shape=egg height=\"0\" margin=\"0.1,0.05\" fontname=terminus fontsize=13 fontcolor=white color=\"#ffffff99\" style=\"solid\"] edge [color=\"#ffffff\" fillcolor=\"transparent\" style=\"solid\"] ",
         "suffix": "}"
+      },
+      "graphviz": {
+        "path": "sh",
+        "defaultArguments": [
+          "-c",
+          "dot -T{format} {args} -o {output} {input_file}"
+        ],
+        "inputExtension": ".dot",
+        "defaultParams": {
+          "format": "svg",
+          "args": ""
+        }
       }
     }
   }

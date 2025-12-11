@@ -62,3 +62,24 @@ print(f"z is {z}")
 z is 94
 ```
 
+## Graphviz (raw mode)
+
+```graphviz output=tests/output/graphviz-basic.svg
+digraph {
+  rankdir=LR
+  A -> B -> C
+}
+```
+
+<!--Result:-->
+![output](tests/output/graphviz-basic.svg)
+
+```graphviz output=tests/output/graphviz-args.svg args=-Grankdir=TB
+digraph {
+  A -> B -> C
+  B -> D
+}
+```
+
+<!--Result:-->
+![output](tests/output/graphviz-args.svg)
