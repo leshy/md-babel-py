@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from .cache import Cache, compute_cache_key
 from .config import Config, EvaluatorConfig, get_evaluator
 from .parser import CodeBlock
 from .session import SessionManager
@@ -52,9 +53,10 @@ def substitute_params(
 class Executor:
     """Execute code blocks, handling both isolated and session-based execution."""
 
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, cache_enabled: bool = True):
         self.config = config
         self.session_manager = SessionManager()
+        self.cache = Cache(enabled=cache_enabled)
 
     def execute(self, block: CodeBlock) -> ExecutionResult:
         """Execute a code block and return the result."""
@@ -69,9 +71,30 @@ class Executor:
             )
 
         if block.session and evaluator.session:
+            # Session blocks are not cached (they depend on previous state)
             return self._execute_session(block, evaluator)
         else:
-            return self._execute_isolated(block, evaluator)
+            return self._execute_isolated_cached(block, evaluator)
+
+    def _execute_isolated_cached(
+        self, block: CodeBlock, evaluator: EvaluatorConfig
+    ) -> ExecutionResult:
+        """Execute an isolated block with caching."""
+        cache_key = compute_cache_key(block, evaluator)
+        output_file = block.params.get("output")
+
+        # Check cache
+        cached = self.cache.get(cache_key, output_file=output_file)
+        if cached is not None:
+            logger.debug(f"Cache hit for {block.language} block at line {block.start_line}")
+            return cached
+
+        # Execute and cache result
+        result = self._execute_isolated(block, evaluator)
+        if result.success:
+            self.cache.put(cache_key, result, output_file=output_file)
+
+        return result
 
     def _execute_isolated(self, block: CodeBlock, evaluator: EvaluatorConfig) -> ExecutionResult:
         """Execute a code block in isolation (subprocess)."""

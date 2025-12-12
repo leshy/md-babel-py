@@ -46,6 +46,7 @@ def main() -> int:
     run_parser.add_argument("--config", "-c", type=Path, help="Config file path")
     run_parser.add_argument("--lang", help="Only execute these languages (comma-separated)")
     run_parser.add_argument("--dry-run", action="store_true", help="Show what would be executed")
+    run_parser.add_argument("--no-cache", action="store_true", help="Disable caching, always re-execute blocks")
 
     args = parser.parse_args()
 
@@ -309,11 +310,17 @@ def cmd_run(args: argparse.Namespace) -> int:
         return 0
 
     # Execute blocks
-    executor = Executor(config)
+    cache_enabled = not getattr(args, "no_cache", False)
+    executor = Executor(config, cache_enabled=cache_enabled)
     try:
         results, test_failures, _ = execute_blocks(executor, executable_blocks)
     finally:
         executor.cleanup()
+
+    # Log cache stats
+    stats = executor.cache.stats
+    if stats["hits"] > 0 or stats["misses"] > 0:
+        logger.info(f"Cache: {stats['hits']} hits, {stats['misses']} misses")
 
     # Apply results to content
     new_content = apply_results(content, results)
