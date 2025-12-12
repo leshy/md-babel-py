@@ -207,12 +207,36 @@ class Executor:
         # This is only called when evaluator.session is not None (checked in execute())
         assert evaluator.session is not None
         session_key = (block.language, block.session)
-        return self.session_manager.execute(
+
+        # Merge default params with block params
+        params = {**evaluator.default_params, **block.params}
+
+        # Substitute params in code (e.g., {output} placeholder)
+        code = block.code
+        for key, value in params.items():
+            code = code.replace(f"{{{key}}}", value)
+
+        # Ensure output directory exists if output is specified
+        output_file_path = block.params.get("output")
+        if output_file_path:
+            Path(output_file_path).parent.mkdir(parents=True, exist_ok=True)
+
+        result = self.session_manager.execute(
             session_key=session_key,
-            code=block.code,
+            code=code,
             language=block.language,
             session_config=evaluator.session,
         )
+
+        # If output file was specified and exists, return image reference
+        if output_file_path and os.path.exists(output_file_path) and result.success:
+            return ExecutionResult(
+                stdout=f"![output]({output_file_path})",
+                stderr=result.stderr,
+                success=True,
+            )
+
+        return result
 
     def cleanup(self) -> None:
         """Clean up all sessions."""

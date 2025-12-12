@@ -30,10 +30,13 @@ class SessionConfig:
         command: Command to start the REPL (e.g., ["python3", "-i"]).
         marker: Optional custom marker command. If not set, uses built-in default.
         prompts: Optional list of REPL prompt patterns to strip from output.
+        protocol: Communication protocol - "json" for structured JSON I/O,
+            "marker" for traditional REPL with end markers.
     """
     command: list[str]
     marker: str | None = None
     prompts: list[str] = field(default_factory=list)
+    protocol: str = "marker"  # "json" or "marker"
 
 
 @dataclass
@@ -270,10 +273,18 @@ def _parse_session_config(
             f"{config_path}: session config for '{lang}': 'prompts' must be an array of strings"
         )
 
+    # Parse protocol
+    protocol = session_raw.get("protocol", "marker")
+    if protocol not in ("json", "marker"):
+        raise ConfigError(
+            f"{config_path}: session config for '{lang}': 'protocol' must be 'json' or 'marker'"
+        )
+
     return SessionConfig(
         command=command,
         marker=session_raw.get("marker"),
         prompts=prompts,
+        protocol=protocol,
     )
 
 

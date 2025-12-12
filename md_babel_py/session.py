@@ -2,22 +2,26 @@
 
 This module handles persistent REPL sessions for languages that support them.
 Sessions allow variables and state to persist across multiple code blocks.
+
+Two protocols are supported:
+- "json": Structured JSON I/O (recommended for Python via session_server.py)
+- "marker": Traditional REPL with end markers (for other languages)
 """
 
+import json
 import logging
 import os
 import select
 import subprocess
 import time
 from dataclasses import dataclass
-from typing import IO
 
 from .config import SessionConfig
 from .types import ExecutionResult
 
 logger = logging.getLogger(__name__)
 
-# Built-in marker commands per language
+# Built-in marker commands per language (for marker protocol)
 MARKERS: dict[str, str] = {
     "python": "print('__MD_BABEL_END__')",
     "python3": "print('__MD_BABEL_END__')",
@@ -30,7 +34,7 @@ MARKERS: dict[str, str] = {
     "fish": "echo '__MD_BABEL_END__'",
 }
 
-# Built-in REPL prompts per language (for output cleaning)
+# Built-in REPL prompts per language (for output cleaning in marker protocol)
 DEFAULT_PROMPTS: dict[str, list[str]] = {
     "python": [">>> ", "... "],
     "python3": [">>> ", "... "],
@@ -46,22 +50,46 @@ DEFAULT_PROMPTS: dict[str, list[str]] = {
 END_MARKER = "__MD_BABEL_END__"
 
 
+def prepare_code_for_repl(code: str, language: str) -> str:
+    """Prepare code for REPL execution by adding blank lines after indented blocks.
+
+    Python's interactive REPL requires a blank line after indented blocks
+    (if/for/with/def/class/etc.) to signal the block is complete.
+
+    Only needed for marker protocol; JSON protocol handles this properly.
+    """
+    if language not in ("python", "python3"):
+        return code
+
+    lines = code.split('\n')
+    result = []
+    prev_indented = False
+
+    for line in lines:
+        stripped = line.rstrip()
+        is_indented = stripped and (line.startswith(' ') or line.startswith('\t'))
+        is_base_level = stripped and not is_indented
+
+        if prev_indented and is_base_level:
+            result.append('')
+
+        result.append(line)
+        prev_indented = is_indented
+
+    return '\n'.join(result)
+
+
 @dataclass
 class Session:
-    """A persistent REPL session.
-
-    Attributes:
-        process: The subprocess running the REPL.
-        marker: The marker command used to detect end of output.
-        prompts: List of prompt patterns to strip from output.
-    """
+    """A persistent session."""
     process: subprocess.Popen[str]
-    marker: str
-    prompts: list[str]
+    protocol: str  # "json" or "marker"
+    marker: str  # Only used for marker protocol
+    prompts: list[str]  # Only used for marker protocol
 
 
 class SessionManager:
-    """Manage persistent REPL sessions.
+    """Manage persistent sessions.
 
     Each session is identified by a (language, session_name) tuple.
     Sessions are created on first use and reused for subsequent executions.
@@ -70,88 +98,51 @@ class SessionManager:
     def __init__(self) -> None:
         self.sessions: dict[tuple[str, str | None], Session] = {}
 
-    def get_marker(self, language: str, session_config: SessionConfig) -> str:
-        """Get the marker command for a language.
-
-        Args:
-            language: The programming language.
-            session_config: The session configuration.
-
-        Returns:
-            The marker command to use.
-        """
-        if session_config.marker:
-            return session_config.marker
-        return MARKERS.get(language, f"echo '{END_MARKER}'")
-
-    def get_prompts(self, language: str, session_config: SessionConfig) -> list[str]:
-        """Get the prompt patterns for a language.
-
-        Args:
-            language: The programming language.
-            session_config: The session configuration.
-
-        Returns:
-            List of prompt patterns to strip from output.
-        """
-        if session_config.prompts:
-            return session_config.prompts
-        return DEFAULT_PROMPTS.get(language, [])
-
     def get_or_create_session(
         self,
         session_key: tuple[str, str | None],
         language: str,
         session_config: SessionConfig,
     ) -> Session:
-        """Get existing session or create a new one.
-
-        Args:
-            session_key: Tuple of (language, session_name).
-            language: The programming language.
-            session_config: The session configuration.
-
-        Returns:
-            The session object.
-        """
+        """Get existing session or create a new one."""
         if session_key in self.sessions:
             session = self.sessions[session_key]
-            # Check if process is still alive
             if session.process.poll() is None:
                 return session
-            # Process died, remove it
             logger.debug(f"Session {session_key} died, creating new one")
             del self.sessions[session_key]
 
         logger.debug(f"Creating new session {session_key} with command: {session_config.command}")
 
-        # Create new session
         process = subprocess.Popen(
             session_config.command,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            bufsize=0,  # Unbuffered
+            bufsize=1,  # Line buffered for JSON protocol
         )
 
-        marker = self.get_marker(language, session_config)
-        prompts = self.get_prompts(language, session_config)
-        session = Session(process=process, marker=marker, prompts=prompts)
+        # Get marker/prompts for marker protocol
+        marker = session_config.marker or MARKERS.get(language, f"echo '{END_MARKER}'")
+        prompts = session_config.prompts or DEFAULT_PROMPTS.get(language, [])
+
+        session = Session(
+            process=process,
+            protocol=session_config.protocol,
+            marker=marker,
+            prompts=prompts,
+        )
         self.sessions[session_key] = session
 
-        # Drain any startup output from the REPL
-        self._drain_startup(session)
+        # For marker protocol, drain startup output
+        if session_config.protocol == "marker":
+            self._drain_startup(session)
 
         return session
 
     def _drain_startup(self, session: Session, timeout: float = 0.5) -> None:
-        """Drain startup messages from REPL.
-
-        Args:
-            session: The session to drain.
-            timeout: How long to wait for output.
-        """
+        """Drain startup messages from REPL (marker protocol only)."""
         stdout = session.process.stdout
         if stdout is None:
             return
@@ -172,17 +163,7 @@ class SessionManager:
         language: str,
         session_config: SessionConfig,
     ) -> ExecutionResult:
-        """Execute code in a session.
-
-        Args:
-            session_key: Tuple of (language, session_name).
-            code: The code to execute.
-            language: The programming language.
-            session_config: The session configuration.
-
-        Returns:
-            The execution result.
-        """
+        """Execute code in a session."""
         try:
             session = self.get_or_create_session(session_key, language, session_config)
         except Exception as e:
@@ -194,6 +175,95 @@ class SessionManager:
                 error_message=f"Failed to start session: {e}",
             )
 
+        if session.protocol == "json":
+            return self._execute_json(session, code)
+        else:
+            return self._execute_marker(session, code, language)
+
+    def _execute_json(self, session: Session, code: str) -> ExecutionResult:
+        """Execute code using JSON protocol."""
+        stdin = session.process.stdin
+        stdout = session.process.stdout
+
+        if stdin is None or stdout is None:
+            return ExecutionResult(
+                stdout="",
+                stderr="",
+                success=False,
+                error_message="Session I/O not available",
+            )
+
+        # Send JSON request
+        request = json.dumps({"code": code})
+        try:
+            logger.debug(f"Sending JSON request: {request[:100]}...")
+            stdin.write(request + "\n")
+            stdin.flush()
+        except BrokenPipeError:
+            return ExecutionResult(
+                stdout="",
+                stderr="",
+                success=False,
+                error_message="Session process died unexpectedly",
+            )
+
+        # Read JSON response (with timeout)
+        try:
+            # Use select for timeout
+            start_time = time.time()
+            timeout = 30.0
+
+            while True:
+                if time.time() - start_time > timeout:
+                    return ExecutionResult(
+                        stdout="",
+                        stderr="",
+                        success=False,
+                        error_message="Execution timed out",
+                    )
+
+                readable, _, _ = select.select([stdout], [], [], 0.1)
+                if readable:
+                    line = stdout.readline()
+                    if line:
+                        logger.debug(f"Received JSON response: {line[:100]}...")
+                        break
+
+                if session.process.poll() is not None:
+                    return ExecutionResult(
+                        stdout="",
+                        stderr="",
+                        success=False,
+                        error_message="Session process exited unexpectedly",
+                    )
+
+            response = json.loads(line)
+            err = response.get("err", "")
+            return ExecutionResult(
+                stdout=response.get("out", ""),
+                stderr="",  # Don't duplicate - use error_message for errors
+                success=response.get("ok", False),
+                error_message=err if not response.get("ok") and err else None,
+            )
+
+        except json.JSONDecodeError as e:
+            return ExecutionResult(
+                stdout="",
+                stderr="",
+                success=False,
+                error_message=f"Invalid JSON response: {e}",
+            )
+        except Exception as e:
+            logger.exception("Error reading session response")
+            return ExecutionResult(
+                stdout="",
+                stderr="",
+                success=False,
+                error_message=str(e),
+            )
+
+    def _execute_marker(self, session: Session, code: str, language: str) -> ExecutionResult:
+        """Execute code using marker protocol (traditional REPL)."""
         stdin = session.process.stdin
         if stdin is None:
             return ExecutionResult(
@@ -202,6 +272,9 @@ class SessionManager:
                 success=False,
                 error_message="Session stdin is not available",
             )
+
+        # Prepare code for REPL (add blank lines after indented blocks)
+        code = prepare_code_for_repl(code, language)
 
         # Send code followed by marker
         try:
@@ -218,14 +291,11 @@ class SessionManager:
             )
 
         # Read output until we see the marker
-        stdout_parts: list[str] = []
-
         try:
             output = self._read_until_marker(session, timeout=30)
-            stdout_parts.append(output)
         except TimeoutError:
             return ExecutionResult(
-                stdout="".join(stdout_parts),
+                stdout="",
                 stderr="",
                 success=False,
                 error_message="Execution timed out",
@@ -233,15 +303,14 @@ class SessionManager:
         except Exception as e:
             logger.exception("Error reading session output")
             return ExecutionResult(
-                stdout="".join(stdout_parts),
+                stdout="",
                 stderr="",
                 success=False,
                 error_message=str(e),
             )
 
         # Clean up output
-        stdout = "".join(stdout_parts)
-        stdout = self._clean_output(stdout, session, code)
+        stdout = self._clean_output(output, session, code)
 
         return ExecutionResult(
             stdout=stdout,
@@ -250,18 +319,7 @@ class SessionManager:
         )
 
     def _read_until_marker(self, session: Session, timeout: float) -> str:
-        """Read stdout until the end marker appears.
-
-        Args:
-            session: The session to read from.
-            timeout: Maximum time to wait in seconds.
-
-        Returns:
-            The output read from the session.
-
-        Raises:
-            TimeoutError: If the marker is not received within timeout.
-        """
+        """Read stdout until the end marker appears (marker protocol)."""
         output: list[str] = []
         start_time = time.time()
         stdout = session.process.stdout
@@ -281,14 +339,11 @@ class SessionManager:
                     output.append(text)
                     logger.debug(f"Read chunk: {text!r}")
 
-                    # Check if we have the marker
                     full_output = "".join(output)
                     if END_MARKER in full_output:
                         return full_output
 
-            # Check if process died
             if session.process.poll() is not None:
-                # Process exited, get remaining output
                 remaining = stdout.read()
                 if remaining:
                     output.append(remaining)
@@ -297,48 +352,30 @@ class SessionManager:
         return "".join(output)
 
     def _clean_output(self, output: str, session: Session, code: str) -> str:
-        """Clean REPL noise from output.
-
-        Args:
-            output: The raw output from the REPL.
-            session: The session (for prompt patterns).
-            code: The code that was executed (to filter echoes).
-
-        Returns:
-            Cleaned output with prompts and markers removed.
-        """
+        """Clean REPL noise from output (marker protocol)."""
         lines = output.split('\n')
         cleaned: list[str] = []
 
         for line in lines:
-            # Skip the marker output line
             if END_MARKER in line:
                 continue
 
-            # Check if line starts with a known prompt
             stripped = line.lstrip()
             prompt_found = False
 
             for prompt in session.prompts:
                 if stripped.startswith(prompt):
-                    # Extract content after prompt
                     content = stripped[len(prompt):]
-
-                    # Skip if it's echoing our code or marker
                     if content.strip() and content.strip() not in code and 'MD_BABEL' not in content:
                         cleaned.append(content)
                     prompt_found = True
                     break
 
             if not prompt_found and 'MD_BABEL' not in line:
-                # Keep non-prompt lines that don't contain our marker
                 cleaned.append(line)
 
-        # Remove trailing empty lines
         while cleaned and not cleaned[-1].strip():
             cleaned.pop()
-
-        # Remove leading empty lines
         while cleaned and not cleaned[0].strip():
             cleaned.pop(0)
 
