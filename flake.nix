@@ -111,12 +111,10 @@
             pkgs.coreutils
           ] ++ evaluatorDeps;
 
-          # Create /usr/bin/env symlink, config directory, and /tmp
+          # Create /usr/bin/env symlink and /tmp
           extraCommands = ''
             mkdir -p usr/bin
             ln -s ${pkgs.coreutils}/bin/env usr/bin/env
-            mkdir -p root/.config/md-babel
-            cp ${./config.json} root/.config/md-babel/config.json
             mkdir -p tmp
             chmod 1777 tmp
           '';
