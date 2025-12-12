@@ -93,7 +93,7 @@
 
         devShells.default = pkgs.mkShell {
           packages = [
-            md-babel-py
+            # Don't include md-babel-py here - use local editable install instead
             pkgs.python312Packages.pytest
             pkgs.python312Packages.mypy
             pkgs.python312Packages.ruff
