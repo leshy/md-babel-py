@@ -160,11 +160,14 @@ def find_block_result_range(content: str, block: CodeBlock) -> tuple[int, int] |
     """
     lines = content.split('\n')
     line_idx = block.end_line  # 0-indexed position after the block
+    first_blank_idx = None  # Track first blank line before result
 
     # Skip blank lines and </details> tag
     while line_idx < len(lines) and (
         not lines[line_idx].strip() or lines[line_idx].strip() == '</details>'
     ):
+        if first_blank_idx is None and not lines[line_idx].strip():
+            first_blank_idx = line_idx
         line_idx += 1
 
     if line_idx >= len(lines):
@@ -179,7 +182,11 @@ def find_block_result_range(content: str, block: CodeBlock) -> tuple[int, int] |
 
         if line.strip() in ('<!--Result:-->', '<!--Error:-->'):
             if result_start is None:
-                result_start = line_idx + 1  # Convert to 1-indexed
+                # Include preceding blank line if present
+                if first_blank_idx is not None:
+                    result_start = first_blank_idx + 1  # Convert to 1-indexed
+                else:
+                    result_start = line_idx + 1  # Convert to 1-indexed
 
             # Check what follows the comment
             if line_idx + 1 < len(lines):

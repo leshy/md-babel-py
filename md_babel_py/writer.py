@@ -68,7 +68,10 @@ def apply_results(content: str, results: list[BlockResult]) -> str:
                 insert_idx = i + 1
                 break
 
-        lines = lines[:insert_idx] + [''] + new_result_lines + lines[insert_idx:]
+        # Only add blank line if there isn't one already
+        needs_blank = insert_idx == 0 or lines[insert_idx - 1].strip() != ''
+        prefix = [''] if needs_blank else []
+        lines = lines[:insert_idx] + prefix + new_result_lines + lines[insert_idx:]
 
         # Update content for next iteration's range finding
         content = '\n'.join(lines)

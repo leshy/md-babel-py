@@ -200,11 +200,18 @@ class SessionManager:
             stdin.write(request + "\n")
             stdin.flush()
         except BrokenPipeError:
+            # Capture stderr to show why the process died
+            stderr_output = ""
+            if session.process.stderr:
+                stderr_output = session.process.stderr.read()
+            error_msg = "Session process died unexpectedly"
+            if stderr_output:
+                error_msg += f":\n{stderr_output}"
             return ExecutionResult(
                 stdout="",
                 stderr="",
                 success=False,
-                error_message="Session process died unexpectedly",
+                error_message=error_msg,
             )
 
         # Read JSON response (with timeout)
@@ -230,11 +237,18 @@ class SessionManager:
                         break
 
                 if session.process.poll() is not None:
+                    # Capture stderr to show why the process died
+                    stderr_output = ""
+                    if session.process.stderr:
+                        stderr_output = session.process.stderr.read()
+                    error_msg = "Session process exited unexpectedly"
+                    if stderr_output:
+                        error_msg += f":\n{stderr_output}"
                     return ExecutionResult(
                         stdout="",
                         stderr="",
                         success=False,
-                        error_message="Session process exited unexpectedly",
+                        error_message=error_msg,
                     )
 
             response = json.loads(line)
@@ -283,11 +297,18 @@ class SessionManager:
             stdin.write(session.marker + "\n")
             stdin.flush()
         except BrokenPipeError:
+            # Capture stderr to show why the process died
+            stderr_output = ""
+            if session.process.stderr:
+                stderr_output = session.process.stderr.read()
+            error_msg = "Session process died unexpectedly"
+            if stderr_output:
+                error_msg += f":\n{stderr_output}"
             return ExecutionResult(
                 stdout="",
                 stderr="",
                 success=False,
-                error_message="Session process died unexpectedly",
+                error_message=error_msg,
             )
 
         # Read output until we see the marker
