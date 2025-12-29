@@ -292,6 +292,24 @@ x = 42
 | `skip`           | Don't execute this block                                  |
 | `no-result`      | Execute but don't insert result block                     |
 
+### Result Placement
+
+Results are inserted after the code block. If the code block is inside a `<details>` tag, the result is placed after `</details>`:
+
+````markdown
+<details>
+<summary>diagram source</summary>
+
+```pikchr output=diagram.svg
+box "Hello"
+```
+
+</details>
+
+<!--Result:-->
+![output](diagram.svg)
+````
+
 ### Custom Parameters
 
 Any `key=value` pair becomes a parameter for the evaluator command:

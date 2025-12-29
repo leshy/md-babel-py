@@ -1,9 +1,18 @@
 """Write execution results back to markdown."""
 
+import re
 from dataclasses import dataclass
 
 from .parser import CodeBlock, find_block_result_range
 from .types import ExecutionResult
+
+# ANSI escape sequence pattern (covers SGR codes, cursor movement, etc.)
+ANSI_ESCAPE_PATTERN = re.compile(r'\x1b\[[0-9;]*[a-zA-Z]')
+
+
+def strip_ansi(text: str) -> str:
+    """Remove ANSI escape sequences from text."""
+    return ANSI_ESCAPE_PATTERN.sub('', text)
 
 
 @dataclass
@@ -27,21 +36,39 @@ def apply_results(content: str, results: list[BlockResult]) -> str:
         block = block_result.block
         result = block_result.result
 
-        # Find existing result block range
+        # Check if ANSI stripping is requested (ansi=false)
+        ansi_param = block.params.get("ansi", "true").lower()
+        if ansi_param == "false":
+            result = ExecutionResult(
+                stdout=strip_ansi(result.stdout),
+                stderr=strip_ansi(result.stderr),
+                success=result.success,
+                error_message=result.error_message,
+            )
+
+        # Find existing result block range and remove it first
         existing_range = find_block_result_range(content, block)
+
+        if existing_range:
+            # Remove existing result block
+            start_idx = existing_range[0] - 1  # Convert to 0-indexed
+            end_idx = existing_range[1]  # Already 1-indexed, use as exclusive end
+            lines = lines[:start_idx] + lines[end_idx:]
+            content = '\n'.join(lines)
 
         # Build new result block(s)
         new_result_lines = build_result_block(result)
 
-        if existing_range:
-            # Replace existing result block
-            start_idx = existing_range[0] - 1  # Convert to 0-indexed
-            end_idx = existing_range[1]  # Already 1-indexed, use as exclusive end
-            lines = lines[:start_idx] + new_result_lines + lines[end_idx:]
-        else:
-            # Insert after code block
-            insert_idx = block.end_line  # 0-indexed position after block
-            lines = lines[:insert_idx] + [''] + new_result_lines + lines[insert_idx:]
+        # Insert after code block (or after </details> if present)
+        insert_idx = block.end_line  # 0-indexed position after block
+
+        # Check if </details> follows the code block (within next few lines)
+        for i in range(insert_idx, min(insert_idx + 5, len(lines))):
+            if lines[i].strip() == '</details>':
+                insert_idx = i + 1
+                break
+
+        lines = lines[:insert_idx] + [''] + new_result_lines + lines[insert_idx:]
 
         # Update content for next iteration's range finding
         content = '\n'.join(lines)

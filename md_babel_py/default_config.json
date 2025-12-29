@@ -14,7 +14,8 @@
       },
       "python": {
         "path": "/usr/bin/env",
-        "defaultArguments": ["python3"],
+        "defaultArguments": ["python3", "{input_file}"],
+        "inputExtension": ".py",
         "session": {
           "command": ["python3", "-m", "md_babel_py.session_server"],
           "protocol": "json"
