@@ -1,9 +1,17 @@
 """Integration tests for md-babel-py."""
 
+import re
 import subprocess
 from pathlib import Path
 
 TESTS_DIR = Path(__file__).parent
+
+
+def normalize_output(text: str) -> str:
+    """Normalize output for comparison by replacing variable paths."""
+    # Replace temp file paths like /tmp/tmpXXXXXX.py with placeholder
+    text = re.sub(r'/tmp/tmp[a-zA-Z0-9_]+\.py', '<tmpfile>', text)
+    return text
 
 
 def test_integration():
@@ -19,8 +27,8 @@ def test_integration():
 
     assert result.returncode == 0, f"Command failed: {result.stderr}"
 
-    expected = expected_file.read_text()
-    actual = result.stdout
+    expected = normalize_output(expected_file.read_text())
+    actual = normalize_output(result.stdout)
 
     # Normalize trailing newlines
     expected = expected.rstrip() + "\n"

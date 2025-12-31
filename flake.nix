@@ -22,7 +22,7 @@
         # Python package - minimal, without propagated deps polluting PATH
         md-babel-py = pkgs.python312Packages.buildPythonApplication {
           pname = "md-babel-py";
-          version = "0.1.0";
+          version = "1.0.6";
           src = ./.;
           format = "pyproject";
 

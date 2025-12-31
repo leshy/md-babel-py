@@ -32,7 +32,9 @@ print(f"x is {x}")
 <!--Error:-->
 ```
 Traceback (most recent call last):
-  File "<stdin>", line 2, in <module>
+  File "/tmp/tmpjy6my2m7.py", line 2, in <module>
+    print(f"x is {x}")
+                  ^
 NameError: name 'x' is not defined
 
 Exit code: 1
@@ -83,3 +85,4 @@ digraph {
 
 <!--Result:-->
 ![output](tests/output/graphviz-args.svg)
+
