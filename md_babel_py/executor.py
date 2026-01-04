@@ -53,10 +53,25 @@ def substitute_params(
 class Executor:
     """Execute code blocks, handling both isolated and session-based execution."""
 
-    def __init__(self, config: Config, cache_enabled: bool = True):
+    def __init__(self, config: Config, cache_enabled: bool = True, source_file: Path | None = None):
         self.config = config
         self.session_manager = SessionManager()
         self.cache = Cache(enabled=cache_enabled)
+        # Directory containing the source markdown file (for resolving relative paths)
+        self.source_dir = source_file.parent.resolve() if source_file else Path.cwd()
+
+    def _resolve_output_path(self, output_param: str) -> tuple[Path, str]:
+        """Resolve output path relative to source file directory.
+
+        Returns:
+            Tuple of (absolute_path, relative_path_for_markdown)
+        """
+        output_path = Path(output_param)
+        if output_path.is_absolute():
+            return output_path, output_param
+        # Resolve relative to source file directory
+        absolute_path = (self.source_dir / output_path).resolve()
+        return absolute_path, output_param  # Keep original relative path for markdown
 
     def execute(self, block: CodeBlock) -> ExecutionResult:
         """Execute a code block and return the result."""
@@ -81,7 +96,9 @@ class Executor:
     ) -> ExecutionResult:
         """Execute an isolated block with caching."""
         cache_key = compute_cache_key(block, evaluator)
-        output_file = block.params.get("output")
+        output_param = block.params.get("output")
+        # Resolve output path relative to source file
+        output_file = str(self._resolve_output_path(output_param)[0]) if output_param else None
 
         # Check cache
         cached = self.cache.get(cache_key, output_file=output_file)
@@ -117,6 +134,17 @@ class Executor:
                     error_message=f"Evaluator '{block.language}' requires output=<path> parameter",
                 )
 
+            # Resolve output path relative to source file (if specified)
+            output_rel_path: str | None = None
+            if "output" in block.params:
+                abs_path, output_rel_path = self._resolve_output_path(block.params["output"])
+                output_file_path = str(abs_path)
+                # Update params with absolute path for command substitution
+                params["output"] = output_file_path
+                # Ensure parent directory exists
+                abs_path.parent.mkdir(parents=True, exist_ok=True)
+                logger.debug(f"Output file: {output_file_path}")
+
             # Apply prefix/suffix to code
             code = evaluator.prefix + block.code + evaluator.suffix
 
@@ -131,13 +159,6 @@ class Executor:
                 with os.fdopen(fd, 'w') as f:
                     f.write(code)
                 logger.debug(f"Wrote code to temp file: {input_file_path}")
-
-            # Get output file from params if specified
-            if "output" in block.params:
-                output_file_path = block.params["output"]
-                # Ensure parent directory exists
-                Path(output_file_path).parent.mkdir(parents=True, exist_ok=True)
-                logger.debug(f"Output file: {output_file_path}")
 
             # Substitute params in arguments
             args = substitute_params(
@@ -169,8 +190,8 @@ class Executor:
 
             # Read output from file or stdout
             if output_file_path and os.path.exists(output_file_path):
-                # Return image reference for the output file
-                stdout = f"![output]({output_file_path})"
+                # Return image reference with relative path for markdown
+                stdout = f"![output]({output_rel_path})"
             else:
                 stdout = result.stdout
 
@@ -211,15 +232,21 @@ class Executor:
         # Merge default params with block params
         params = {**evaluator.default_params, **block.params}
 
+        # Resolve output path relative to source file (if specified)
+        output_file_path: str | None = None
+        output_rel_path: str | None = None
+        if "output" in block.params:
+            abs_path, output_rel_path = self._resolve_output_path(block.params["output"])
+            output_file_path = str(abs_path)
+            # Update params with absolute path for code substitution
+            params["output"] = output_file_path
+            # Ensure parent directory exists
+            abs_path.parent.mkdir(parents=True, exist_ok=True)
+
         # Substitute params in code (e.g., {output} placeholder)
         code = block.code
         for key, value in params.items():
             code = code.replace(f"{{{key}}}", value)
-
-        # Ensure output directory exists if output is specified
-        output_file_path = block.params.get("output")
-        if output_file_path:
-            Path(output_file_path).parent.mkdir(parents=True, exist_ok=True)
 
         result = self.session_manager.execute(
             session_key=session_key,
@@ -231,7 +258,7 @@ class Executor:
         # If output file was specified and exists, return image reference
         if output_file_path and os.path.exists(output_file_path) and result.success:
             return ExecutionResult(
-                stdout=f"![output]({output_file_path})",
+                stdout=f"![output]({output_rel_path})",
                 stderr=result.stderr,
                 success=True,
             )

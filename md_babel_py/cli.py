@@ -311,7 +311,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     # Execute blocks
     cache_enabled = not getattr(args, "no_cache", False)
-    executor = Executor(config, cache_enabled=cache_enabled)
+    executor = Executor(config, cache_enabled=cache_enabled, source_file=args.file)
     try:
         results, test_failures, _ = execute_blocks(executor, executable_blocks)
     finally:

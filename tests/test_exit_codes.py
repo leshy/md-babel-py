@@ -176,3 +176,40 @@ print("hello")
     # Should still have exactly one <details> tag
     assert result2.stdout.count("<details>") == 1
     assert result2.stdout.count("</details>") == 1
+
+
+def test_output_path_relative_to_markdown_file():
+    """Output paths should resolve relative to markdown file, not CWD."""
+    import os
+
+    # Create a subdirectory structure
+    with tempfile.TemporaryDirectory() as tmpdir:
+        docs_dir = Path(tmpdir) / "docs"
+        docs_dir.mkdir()
+
+        # Create markdown file in subdirectory
+        md_file = docs_dir / "test.md"
+        md_file.write_text("""
+```graphviz output=images/diagram.svg
+digraph { A -> B }
+```
+""")
+
+        # Run from a different directory (tmpdir, not docs_dir)
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(tmpdir)
+            result = subprocess.run(
+                ["md-babel-py", "run", str(md_file), "--stdout"],
+                capture_output=True,
+                text=True,
+            )
+        finally:
+            os.chdir(original_cwd)
+
+        assert result.returncode == 0, f"Failed: {result.stderr}"
+        # Check the output file was created relative to markdown file
+        expected_output = docs_dir / "images" / "diagram.svg"
+        assert expected_output.exists(), f"Expected {expected_output} to exist"
+        # Check the markdown reference uses relative path
+        assert "![output](images/diagram.svg)" in result.stdout
