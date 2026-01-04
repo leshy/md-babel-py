@@ -40,13 +40,14 @@ def main() -> int:
 
     # run command
     run_parser = subparsers.add_parser("run", help="Execute code blocks in a markdown file")
-    run_parser.add_argument("file", type=Path, help="Markdown file to process")
+    run_parser.add_argument("file", type=Path, help="Markdown file or directory to process")
     run_parser.add_argument("--output", "-o", type=Path, help="Output file (default: edit in-place)")
     run_parser.add_argument("--stdout", action="store_true", help="Print result to stdout instead of writing file")
     run_parser.add_argument("--config", "-c", type=Path, help="Config file path")
     run_parser.add_argument("--lang", help="Only execute these languages (comma-separated)")
     run_parser.add_argument("--dry-run", action="store_true", help="Show what would be executed")
     run_parser.add_argument("--no-cache", action="store_true", help="Disable caching, always re-execute blocks")
+    run_parser.add_argument("--recursive", "-r", action="store_true", help="Process all .md files in directory recursively")
 
     args = parser.parse_args()
 
@@ -254,31 +255,48 @@ def cmd_ls(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_run(args: argparse.Namespace) -> int:
-    """Execute the run command.
+def collect_markdown_files(path: Path, recursive: bool) -> list[Path]:
+    """Collect markdown files from path.
 
     Args:
-        args: Parsed command-line arguments.
+        path: File or directory path.
+        recursive: If True and path is a directory, find all .md files recursively.
 
     Returns:
-        Exit code (0 for success, non-zero for failure).
+        List of markdown file paths.
     """
-    # Load config
-    config = load_config(args.config)
+    if path.is_file():
+        return [path]
+    elif path.is_dir():
+        if recursive:
+            return sorted(path.rglob("*.md"))
+        else:
+            return sorted(path.glob("*.md"))
+    return []
 
-    # Read input file
-    if not args.file.exists():
-        logger.error(f"Error: File not found: {args.file}")
-        return 1
 
-    content = args.file.read_text()
+def run_single_file(
+    file_path: Path,
+    config: Config,
+    args: argparse.Namespace,
+) -> tuple[int, int, list[str]]:
+    """Process a single markdown file.
+
+    Args:
+        file_path: Path to the markdown file.
+        config: Loaded configuration.
+        args: Command-line arguments.
+
+    Returns:
+        Tuple of (blocks_executed, blocks_total, test_failures).
+    """
+    content = file_path.read_text()
 
     # Parse code blocks
     blocks = find_code_blocks(content)
 
     if not blocks:
-        logger.info("No code blocks found.")
-        return 0
+        return 0, 0, []
 
     # Parse language filter
     lang_filter = set(args.lang.split(",")) if args.lang else None
@@ -290,8 +308,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         logger.warning(f"Warning: No evaluators configured for: {', '.join(sorted(unconfigured))}")
 
     if not configured_blocks:
-        logger.info("No executable code blocks found.")
-        return 0
+        return 0, 0, []
 
     # Filter out skipped blocks
     executable_blocks = [b for b in configured_blocks if not b.skip]
@@ -307,11 +324,11 @@ def cmd_run(args: argparse.Namespace) -> int:
             logger.info("")
         if skipped_count:
             logger.info(f"({skipped_count} block(s) marked as skip)")
-        return 0
+        return len(executable_blocks), len(executable_blocks), []
 
     # Execute blocks
     cache_enabled = not getattr(args, "no_cache", False)
-    executor = Executor(config, cache_enabled=cache_enabled, source_file=args.file)
+    executor = Executor(config, cache_enabled=cache_enabled, source_file=file_path)
     try:
         results, test_failures, _ = execute_blocks(executor, executable_blocks)
     finally:
@@ -329,18 +346,76 @@ def cmd_run(args: argparse.Namespace) -> int:
     if args.stdout:
         print(new_content)
     else:
-        output_path = args.output or args.file
+        output_path = args.output or file_path
         output_path.write_text(new_content)
 
     success_count = sum(1 for r in results if r.result.success)
-    logger.info(f"\nDone: {success_count}/{len(results)} blocks executed successfully.")
+    return success_count, len(results), test_failures
 
-    if not args.stdout and args.output and args.output != args.file:
+
+def cmd_run(args: argparse.Namespace) -> int:
+    """Execute the run command.
+
+    Args:
+        args: Parsed command-line arguments.
+
+    Returns:
+        Exit code (0 for success, non-zero for failure).
+    """
+    # Load config
+    config = load_config(args.config)
+
+    # Check path exists
+    if not args.file.exists():
+        logger.error(f"Error: Path not found: {args.file}")
+        return 1
+
+    # Collect files to process
+    files = collect_markdown_files(args.file, args.recursive)
+
+    if not files:
+        if args.file.is_dir():
+            logger.info(f"No markdown files found in {args.file}")
+        else:
+            logger.error(f"Error: Not a markdown file: {args.file}")
+        return 0
+
+    # Validate flags for multi-file mode
+    if len(files) > 1:
+        if args.stdout:
+            logger.error("Error: --stdout not supported with multiple files")
+            return 1
+        if args.output:
+            logger.error("Error: --output not supported with multiple files")
+            return 1
+
+    # Process files
+    total_success = 0
+    total_blocks = 0
+    all_failures: list[str] = []
+
+    for file_path in files:
+        if len(files) > 1:
+            logger.info(f"\n{'='*60}\nProcessing: {file_path}\n{'='*60}")
+
+        success, total, failures = run_single_file(file_path, config, args)
+        total_success += success
+        total_blocks += total
+        all_failures.extend([f"{file_path}: {f}" for f in failures])
+
+    # Summary for multi-file mode
+    if len(files) > 1:
+        logger.info(f"\n{'='*60}")
+        logger.info(f"Total: {len(files)} files, {total_success}/{total_blocks} blocks executed successfully.")
+    elif total_blocks > 0:
+        logger.info(f"\nDone: {total_success}/{total_blocks} blocks executed successfully.")
+
+    if not args.stdout and args.output and len(files) == 1:
         logger.info(f"Output written to: {args.output}")
 
-    if test_failures:
-        logger.error(f"\n{len(test_failures)} test failure(s):")
-        for f in test_failures:
+    if all_failures:
+        logger.error(f"\n{len(all_failures)} test failure(s):")
+        for f in all_failures:
             logger.error(f"  - {f}")
         return 1
 
