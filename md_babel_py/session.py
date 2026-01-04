@@ -67,8 +67,8 @@ def prepare_code_for_repl(code: str, language: str) -> str:
 
     for line in lines:
         stripped = line.rstrip()
-        is_indented = stripped and (line.startswith(' ') or line.startswith('\t'))
-        is_base_level = stripped and not is_indented
+        is_indented = bool(stripped) and (line.startswith(' ') or line.startswith('\t'))
+        is_base_level = bool(stripped) and not is_indented
 
         if prev_indented and is_base_level:
             result.append('')

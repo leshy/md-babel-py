@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "md-babel-py"
-version = "1.0.7"
+version = "1.0.8"
 description = "Execute code blocks in markdown files with session support"
 requires-python = ">=3.10"
 license = "MIT"

@@ -17,7 +17,8 @@ def _load_default_config() -> dict[str, Any] | None:
     try:
         ref = resources.files("md_babel_py").joinpath("default_config.json")
         content = ref.read_text()
-        return json.loads(content)
+        result: dict[str, Any] = json.loads(content)
+        return result
     except (TypeError, FileNotFoundError, json.JSONDecodeError):
         return None
 

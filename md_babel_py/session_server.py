@@ -17,11 +17,12 @@ import json
 import sys
 import traceback
 from io import StringIO
+from typing import Any
 
 
 def main() -> None:
     """Main loop: read JSON commands, execute code, return JSON results."""
-    namespace: dict = {}
+    namespace: dict[str, Any] = {}
 
     for line in sys.stdin:
         line = line.strip()

@@ -13,6 +13,7 @@ class CodeBlock:
     expected_error: bool  # If True, expect this block to fail
     skip: bool  # If True, don't evaluate this block
     no_result: bool  # If True, evaluate but don't insert result
+    fold: str | None  # None = no fold, "" = fold with default, str = custom summary
     start_line: int  # 1-indexed, line of opening fence
     end_line: int  # 1-indexed, line of closing fence
     info_string: str  # Full info string after opening fence
@@ -54,8 +55,14 @@ def parse_info_string(info: str) -> tuple[str, dict[str, str], set[str]]:
     """Parse info string into language, metadata dict, and flags set.
 
     Example: "python session=main expected-error" -> ("python", {"session": "main"}, {"expected-error"})
+    Example: 'python fold="Show Code"' -> ("python", {"fold": "Show Code"}, set())
     """
-    parts = info.strip().split()
+    info = info.strip()
+    if not info:
+        return "", {}, set()
+
+    # Tokenize respecting quoted strings
+    parts = tokenize_info_string(info)
     if not parts:
         return "", {}, set()
 
@@ -66,11 +73,46 @@ def parse_info_string(info: str) -> tuple[str, dict[str, str], set[str]]:
     for part in parts[1:]:
         if "=" in part:
             key, value = part.split("=", 1)
+            # Remove surrounding quotes if present
+            if len(value) >= 2 and value[0] in ('"', "'") and value[-1] == value[0]:
+                value = value[1:-1]
             metadata[key] = value
         else:
             flags.add(part)
 
     return language, metadata, flags
+
+
+def tokenize_info_string(info: str) -> list[str]:
+    """Tokenize info string, respecting quoted values.
+
+    Example: 'python fold="Show Code" skip' -> ['python', 'fold="Show Code"', 'skip']
+    """
+    tokens = []
+    current = []
+    in_quotes = False
+    quote_char = None
+
+    for char in info:
+        if char in ('"', "'") and not in_quotes:
+            in_quotes = True
+            quote_char = char
+            current.append(char)
+        elif char == quote_char and in_quotes:
+            in_quotes = False
+            quote_char = None
+            current.append(char)
+        elif char.isspace() and not in_quotes:
+            if current:
+                tokens.append(''.join(current))
+                current = []
+        else:
+            current.append(char)
+
+    if current:
+        tokens.append(''.join(current))
+
+    return tokens
 
 
 def find_code_blocks(content: str) -> list[CodeBlock]:
@@ -92,8 +134,15 @@ def find_code_blocks(content: str) -> list[CodeBlock]:
         end_line = content[:end_pos].count('\n') + 1
 
         # Separate reserved metadata from custom params
-        reserved_keys = {"session"}
+        reserved_keys = {"session", "fold"}
         params = {k: v for k, v in metadata.items() if k not in reserved_keys}
+
+        # Handle fold: can be flag (fold) or key=value (fold=Summary)
+        fold: str | None = None
+        if "fold" in flags:
+            fold = ""  # Empty string means use default summary
+        elif "fold" in metadata:
+            fold = metadata["fold"]
 
         blocks.append(CodeBlock(
             language=language,
@@ -102,6 +151,7 @@ def find_code_blocks(content: str) -> list[CodeBlock]:
             expected_error="expected-error" in flags,
             skip="skip" in flags,
             no_result="no-result" in flags,
+            fold=fold,
             start_line=start_line,
             end_line=end_line,
             info_string=info_string.strip(),
@@ -160,13 +210,16 @@ def find_block_result_range(content: str, block: CodeBlock) -> tuple[int, int] |
     """
     lines = content.split('\n')
     line_idx = block.end_line  # 0-indexed position after the block
-    first_blank_idx = None  # Track first blank line before result
+    first_blank_idx = None  # Track first blank line before result (after </details>)
 
     # Skip blank lines and </details> tag
     while line_idx < len(lines) and (
         not lines[line_idx].strip() or lines[line_idx].strip() == '</details>'
     ):
-        if first_blank_idx is None and not lines[line_idx].strip():
+        if lines[line_idx].strip() == '</details>':
+            # Reset blank tracking after </details> - we don't want to remove it
+            first_blank_idx = None
+        elif first_blank_idx is None and not lines[line_idx].strip():
             first_blank_idx = line_idx
         line_idx += 1
 

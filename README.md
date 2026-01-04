@@ -291,10 +291,37 @@ x = 42
 | `expected-error` | Expect this block to fail; test fails if it succeeds      |
 | `skip`           | Don't execute this block                                  |
 | `no-result`      | Execute but don't insert result block                     |
+| `fold`           | Wrap code in collapsible `<details>` (uses language as summary) |
+| `fold="TEXT"`    | Wrap code in collapsible `<details>` with custom summary  |
 
 ### Result Placement
 
-Results are inserted after the code block. If the code block is inside a `<details>` tag, the result is placed after `</details>`:
+Results are inserted after the code block. Use the `fold` flag to automatically wrap code in a collapsible `<details>` element:
+
+````markdown
+```python fold
+print("hello")
+```
+````
+
+This produces:
+
+````markdown
+<details><summary>Python</summary>
+
+```python fold
+print("hello")
+```
+
+</details>
+
+<!--Result:-->
+```
+hello
+```
+````
+
+For manual control, if a code block is inside a `<details>` tag, the result is placed after `</details>`:
 
 ````markdown
 <details>

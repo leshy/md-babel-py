@@ -56,6 +56,10 @@ def apply_results(content: str, results: list[BlockResult]) -> str:
             lines = lines[:start_idx] + lines[end_idx:]
             content = '\n'.join(lines)
 
+        # Handle fold wrapping
+        if block.fold is not None:
+            lines, content = apply_fold_wrapper(lines, block)
+
         # Build new result block(s)
         new_result_lines = build_result_block(result)
 
@@ -77,6 +81,54 @@ def apply_results(content: str, results: list[BlockResult]) -> str:
         content = '\n'.join(lines)
 
     return '\n'.join(lines)
+
+
+def apply_fold_wrapper(lines: list[str], block: CodeBlock) -> tuple[list[str], str]:
+    """Wrap a code block in <details> tags if not already wrapped.
+
+    Returns updated lines and content.
+    """
+    start_idx = block.start_line - 1  # 0-indexed
+    end_idx = block.end_line  # 0-indexed position after block
+
+    # Check if already wrapped (look for <details> before the block)
+    already_wrapped = False
+    for i in range(start_idx - 1, max(start_idx - 3, -1), -1):
+        line = lines[i].strip()
+        if line.startswith('<details'):
+            already_wrapped = True
+            break
+        elif line and not line.startswith('<!--'):
+            # Non-empty, non-comment line means not wrapped
+            break
+
+    if already_wrapped:
+        return lines, '\n'.join(lines)
+
+    # Build summary text
+    if block.fold:
+        summary = block.fold
+    else:
+        summary = block.language.capitalize()
+
+    # Insert <details><summary> before code block and </details> after
+    details_open = [f'<details><summary>{summary}</summary>', '']
+    details_close = ['', '</details>']
+
+    lines = (
+        lines[:start_idx] +
+        details_open +
+        lines[start_idx:end_idx] +
+        details_close +
+        lines[end_idx:]
+    )
+
+    # Update block line numbers to account for inserted lines
+    # The block moved down by len(details_open) lines
+    block.start_line += len(details_open)
+    block.end_line += len(details_open)
+
+    return lines, '\n'.join(lines)
 
 
 def build_result_block(result: ExecutionResult) -> list[str]:

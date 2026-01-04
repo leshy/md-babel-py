@@ -131,3 +131,48 @@ print("zzz")
     assert result.stdout.count("<!--Error:-->") == 1
     # Third block never ran (only 2 blocks executed out of 3)
     assert "2/3" in result.stderr or "1/2" in result.stderr  # Progress shows we stopped early
+
+
+def test_fold_default_summary():
+    """fold flag wraps code in details with language as summary."""
+    content = """
+```python fold
+print("hello")
+```
+"""
+    result = run_md_babel(content)
+    assert result.returncode == 0
+    assert "<details><summary>Python</summary>" in result.stdout
+    assert "</details>" in result.stdout
+    # Result should be after </details>
+    assert result.stdout.index("</details>") < result.stdout.index("<!--Result:-->")
+
+
+def test_fold_custom_summary():
+    """fold=text uses custom summary text."""
+    content = """
+```python fold="Show Code"
+print("hello")
+```
+"""
+    result = run_md_babel(content)
+    assert result.returncode == 0
+    assert "<details><summary>Show Code</summary>" in result.stdout
+    assert "</details>" in result.stdout
+
+
+def test_fold_no_double_wrap():
+    """Running twice doesn't double-wrap in details."""
+    content = """
+```python fold
+print("hello")
+```
+"""
+    result1 = run_md_babel(content)
+    assert result1.returncode == 0
+    # Run again on the output
+    result2 = run_md_babel(result1.stdout)
+    assert result2.returncode == 0
+    # Should still have exactly one <details> tag
+    assert result2.stdout.count("<details>") == 1
+    assert result2.stdout.count("</details>") == 1
