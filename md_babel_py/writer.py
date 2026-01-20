@@ -3,16 +3,28 @@
 import re
 from dataclasses import dataclass
 
-from .parser import CodeBlock, find_block_result_range
+from .parser import CodeBlock, find_block_result_range, extract_result_content
 from .types import ExecutionResult
 
 # ANSI escape sequence pattern (covers SGR codes, cursor movement, etc.)
 ANSI_ESCAPE_PATTERN = re.compile(r'\x1b\[[0-9;]*[a-zA-Z]')
 
+# Python memory address pattern (e.g., 0x7f3e6d151340)
+MEMORY_ADDRESS_PATTERN = re.compile(r'0x[0-9a-fA-F]+')
+
 
 def strip_ansi(text: str) -> str:
     """Remove ANSI escape sequences from text."""
     return ANSI_ESCAPE_PATTERN.sub('', text)
+
+
+def normalize_output(text: str) -> str:
+    """Normalize output for comparison by replacing volatile patterns.
+
+    Replaces memory addresses so that outputs differing only in addresses
+    are considered equal.
+    """
+    return MEMORY_ADDRESS_PATTERN.sub('0x...', text)
 
 
 @dataclass
@@ -46,10 +58,21 @@ def apply_results(content: str, results: list[BlockResult]) -> str:
                 error_message=result.error_message,
             )
 
-        # Find existing result block range and remove it first
+        # Build new result block(s)
+        new_result_lines = build_result_block(result)
+
+        # Find existing result block range
         existing_range = find_block_result_range(content, block)
 
         if existing_range:
+            # Compare existing vs new output (normalized to ignore memory addresses)
+            existing_content = extract_result_content(content, block)
+            new_content = '\n'.join(new_result_lines)
+
+            if normalize_output(existing_content or '') == normalize_output(new_content):
+                # No meaningful change - skip this block
+                continue
+
             # Remove existing result block
             start_idx = existing_range[0] - 1  # Convert to 0-indexed
             end_idx = existing_range[1]  # Already 1-indexed, use as exclusive end
@@ -59,9 +82,6 @@ def apply_results(content: str, results: list[BlockResult]) -> str:
         # Handle fold wrapping
         if block.fold is not None:
             lines, content = apply_fold_wrapper(lines, block)
-
-        # Build new result block(s)
-        new_result_lines = build_result_block(result)
 
         # Insert after code block (or after </details> if present)
         insert_idx = block.end_line  # 0-indexed position after block

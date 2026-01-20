@@ -280,3 +280,20 @@ def find_block_result_range(content: str, block: CodeBlock) -> tuple[int, int] |
     if result_start and result_end:
         return (result_start, result_end)
     return None
+
+
+def extract_result_content(content: str, block: CodeBlock) -> str | None:
+    """Extract the text content of an existing result block.
+
+    Returns the raw content (stdout/stderr text), or None if no result exists.
+    """
+    result_range = find_block_result_range(content, block)
+    if not result_range:
+        return None
+
+    lines = content.split('\n')
+    start_idx = result_range[0] - 1  # Convert to 0-indexed
+    end_idx = result_range[1]  # 1-indexed, exclusive
+
+    result_lines = lines[start_idx:end_idx]
+    return '\n'.join(result_lines)
