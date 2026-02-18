@@ -12,6 +12,7 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
         diagonPkg = diagon.legacyPackages.${system}.diagon;
+        isLinux = pkgs.stdenv.isLinux;
 
         # Python with matplotlib for code blocks
         pythonWithPackages = pkgs.python312.withPackages (ps: [
@@ -37,6 +38,32 @@
           };
         };
 
+        # On macOS, xvfb-run is not available. Provide a passthrough stub so the
+        # default openscad config (which calls "xvfb-run -a openscad ...") works.
+        # macOS OpenSCAD can render headlessly without a virtual framebuffer.
+        xvfbRunStub = pkgs.writeShellScriptBin "xvfb-run" ''
+          # Strip all leading flags then exec the remaining command directly.
+          # This allows "xvfb-run -a openscad ..." to work on macOS.
+          while [ "$#" -gt 0 ]; do
+            case "$1" in
+              --) shift; break ;;
+              -*) shift ;;
+              *) break ;;
+            esac
+          done
+          exec "$@"
+        '';
+
+        xvfbDep = if isLinux then pkgs.xvfb-run else xvfbRunStub;
+
+        # On macOS, openscad is an .app bundle with no bin/ entry.
+        # Wrap the actual binary so it's accessible as "openscad" on PATH.
+        openscadDep = if isLinux
+          then pkgs.openscad
+          else pkgs.writeShellScriptBin "openscad" ''
+            exec "${pkgs.openscad}/Applications/OpenSCAD.app/Contents/MacOS/OpenSCAD" "$@"
+          '';
+
         # All evaluator dependencies
         evaluatorDeps = with pkgs; [
           # Core
@@ -51,16 +78,18 @@
           graphviz
           asymptote
           pikchr
-          openscad
+          openscadDep
           imagemagick
           diagonPkg
 
-          # OpenSCAD needs a virtual framebuffer and GL libs
-          xvfb-run
-          mesa
+          # Virtual framebuffer (Linux native) or passthrough stub (macOS)
+          xvfbDep
 
           # Asymptote needs LaTeX and dvisvgm
           (texliveSmall.withPackages (ps: [ ps.dvisvgm ]))
+        ] ++ pkgs.lib.optionals isLinux [
+          # Linux-only: Mesa software GL rendering for headless OpenSCAD
+          mesa
         ];
 
         # Runtime wrapper with controlled PATH - pythonWithPackages first
@@ -72,11 +101,13 @@
             wrapProgram $out/bin/md-babel-py \
               --set PATH ${pkgs.lib.makeBinPath ([ pythonWithPackages ] ++ evaluatorDeps)} \
               --set PYTHONPATH ${md-babel-py}/${pkgs.python312.sitePackages} \
+              ${pkgs.lib.optionalString isLinux ''
               --set LIBGL_ALWAYS_SOFTWARE 1 \
               --set GALLIUM_DRIVER llvmpipe \
               --set __GLX_VENDOR_LIBRARY_NAME mesa \
               --set LD_LIBRARY_PATH ${pkgs.mesa}/lib:${pkgs.libglvnd}/lib \
-              --set LIBGL_DRIVERS_PATH ${pkgs.mesa}/lib/dri
+              --set LIBGL_DRIVERS_PATH ${pkgs.mesa}/lib/dri \
+              ''}
           '';
         };
 
