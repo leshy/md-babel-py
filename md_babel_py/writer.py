@@ -83,6 +83,11 @@ def apply_results(content: str, results: list[BlockResult]) -> str:
         if block.fold is not None:
             lines, content = apply_fold_wrapper(lines, block)
 
+        # Nothing to insert (e.g. empty stdout on a successful run)
+        if not new_result_lines:
+            content = '\n'.join(lines)
+            continue
+
         # Insert after code block (or after </details> if present)
         insert_idx = block.end_line  # 0-indexed position after block
 

@@ -9,8 +9,8 @@ TESTS_DIR = Path(__file__).parent
 
 def normalize_output(text: str) -> str:
     """Normalize output for comparison by replacing variable paths."""
-    # Replace temp file paths like /tmp/tmpXXXXXX.py with placeholder
-    text = re.sub(r'/tmp/tmp[a-zA-Z0-9_]+\.py', '<tmpfile>', text)
+    # Replace temp file paths like /tmp/tmpXXX.py or /tmp/nix-shell.XXX/tmpYYY.py
+    text = re.sub(r'(?:/[^/\s"]+)*/tmp[a-zA-Z0-9_]+\.py', '<tmpfile>', text)
     return text
 
 
