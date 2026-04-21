@@ -272,7 +272,12 @@ md-babel-py run document.md --lang python,sh
 
 # Dry run - show what would execute
 md-babel-py run document.md --dry-run
+
+# Longer limit for each isolated subprocess (default 60s; useful for CI or large downloads)
+md-babel-py run document.md --execution-timeout 120
 ```
+
+Isolated evaluators (non-session blocks) run each snippet in a subprocess and stop it after this many seconds. Session-based blocks use separate timeouts inside the session. You can also set **`MD_BABEL_EXECUTION_TIMEOUT`** instead of **`--execution-timeout`**; the CLI flag wins when both are set.
 
 ## Code Block Syntax
 

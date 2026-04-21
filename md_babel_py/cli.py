@@ -3,6 +3,7 @@
 import argparse
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -14,6 +15,33 @@ from .types import ExecutionResult
 from .writer import apply_results, BlockResult
 
 logger = logging.getLogger(__name__)
+
+
+def _positive_float(value: str) -> float:
+    x = float(value)
+    if x <= 0:
+        raise argparse.ArgumentTypeError("must be a positive number")
+    return x
+
+
+def resolve_isolated_execution_timeout(args: argparse.Namespace) -> float:
+    """Seconds before isolated subprocess runs are killed.
+
+    CLI ``--execution-timeout`` wins over the ``MD_BABEL_EXECUTION_TIMEOUT`` environment
+    variable; default is 60.
+    """
+    if getattr(args, "execution_timeout", None) is not None:
+        return float(args.execution_timeout)
+    raw = os.environ.get("MD_BABEL_EXECUTION_TIMEOUT", "").strip()
+    if raw:
+        try:
+            v = float(raw)
+        except ValueError as e:
+            raise ValueError(f"MD_BABEL_EXECUTION_TIMEOUT is not a number: {raw!r}") from e
+        if v <= 0:
+            raise ValueError("MD_BABEL_EXECUTION_TIMEOUT must be positive")
+        return v
+    return 60.0
 
 
 def main() -> int:
@@ -48,6 +76,16 @@ def main() -> int:
     run_parser.add_argument("--dry-run", action="store_true", help="Show what would be executed")
     run_parser.add_argument("--no-cache", action="store_true", help="Disable caching, always re-execute blocks")
     run_parser.add_argument("--recursive", "-r", action="store_true", help="Process all .md files in directory recursively")
+    run_parser.add_argument(
+        "--execution-timeout",
+        type=_positive_float,
+        default=None,
+        metavar="SEC",
+        help=(
+            "Max seconds for each isolated code block subprocess (default: 60, "
+            "or MD_BABEL_EXECUTION_TIMEOUT)"
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -279,6 +317,7 @@ def run_single_file(
     file_path: Path,
     config: Config,
     args: argparse.Namespace,
+    isolated_execution_timeout: float,
 ) -> tuple[int, int, list[str]]:
     """Process a single markdown file.
 
@@ -286,6 +325,7 @@ def run_single_file(
         file_path: Path to the markdown file.
         config: Loaded configuration.
         args: Command-line arguments.
+        isolated_execution_timeout: Subprocess timeout for isolated evaluators (seconds).
 
     Returns:
         Tuple of (blocks_executed, blocks_total, test_failures).
@@ -328,7 +368,12 @@ def run_single_file(
 
     # Execute blocks
     cache_enabled = not getattr(args, "no_cache", False)
-    executor = Executor(config, cache_enabled=cache_enabled, source_file=file_path)
+    executor = Executor(
+        config,
+        cache_enabled=cache_enabled,
+        source_file=file_path,
+        isolated_execution_timeout=isolated_execution_timeout,
+    )
     try:
         results, test_failures, _ = execute_blocks(executor, executable_blocks)
     finally:
@@ -380,6 +425,12 @@ def cmd_run(args: argparse.Namespace) -> int:
             logger.error(f"Error: Not a markdown file: {args.file}")
         return 0
 
+    try:
+        isolated_execution_timeout = resolve_isolated_execution_timeout(args)
+    except ValueError as e:
+        logger.error(f"Invalid execution timeout: {e}")
+        return 1
+
     # Validate flags for multi-file mode
     if len(files) > 1:
         if args.stdout:
@@ -398,7 +449,9 @@ def cmd_run(args: argparse.Namespace) -> int:
         if len(files) > 1:
             logger.info(f"\n{'='*60}\nProcessing: {file_path}\n{'='*60}")
 
-        success, total, failures = run_single_file(file_path, config, args)
+        success, total, failures = run_single_file(
+            file_path, config, args, isolated_execution_timeout
+        )
         total_success += success
         total_blocks += total
         all_failures.extend([f"{file_path}: {f}" for f in failures])
