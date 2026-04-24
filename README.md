@@ -277,7 +277,7 @@ md-babel-py run document.md --dry-run
 md-babel-py run document.md --execution-timeout 120
 ```
 
-Isolated evaluators (non-session blocks) run each snippet in a subprocess and stop it after this many seconds. Session-based blocks use separate timeouts inside the session. You can also set **`MD_BABEL_EXECUTION_TIMEOUT`** instead of **`--execution-timeout`**; the CLI flag wins when both are set.
+Isolated evaluators (non-session blocks) run each snippet in a subprocess and stop it after this many seconds. Session-based blocks use separate timeouts inside the session.
 
 ## Code Block Syntax
 

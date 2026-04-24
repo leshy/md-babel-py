@@ -3,7 +3,6 @@
 import argparse
 import json
 import logging
-import os
 import sys
 from pathlib import Path
 
@@ -15,33 +14,6 @@ from .types import ExecutionResult
 from .writer import apply_results, BlockResult
 
 logger = logging.getLogger(__name__)
-
-
-def _positive_float(value: str) -> float:
-    x = float(value)
-    if x <= 0:
-        raise argparse.ArgumentTypeError("must be a positive number")
-    return x
-
-
-def resolve_isolated_execution_timeout(args: argparse.Namespace) -> float:
-    """Seconds before isolated subprocess runs are killed.
-
-    CLI ``--execution-timeout`` wins over the ``MD_BABEL_EXECUTION_TIMEOUT`` environment
-    variable; default is 60.
-    """
-    if getattr(args, "execution_timeout", None) is not None:
-        return float(args.execution_timeout)
-    raw = os.environ.get("MD_BABEL_EXECUTION_TIMEOUT", "").strip()
-    if raw:
-        try:
-            v = float(raw)
-        except ValueError as e:
-            raise ValueError(f"MD_BABEL_EXECUTION_TIMEOUT is not a number: {raw!r}") from e
-        if v <= 0:
-            raise ValueError("MD_BABEL_EXECUTION_TIMEOUT must be positive")
-        return v
-    return 60.0
 
 
 def main() -> int:
@@ -81,10 +53,7 @@ def main() -> int:
         type=_positive_float,
         default=None,
         metavar="SEC",
-        help=(
-            "Max seconds for each isolated code block subprocess (default: 60, "
-            "or MD_BABEL_EXECUTION_TIMEOUT)"
-        ),
+        help="Max seconds for each isolated code block subprocess (default: 60)",
     )
 
     args = parser.parse_args()
@@ -425,11 +394,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             logger.error(f"Error: Not a markdown file: {args.file}")
         return 0
 
-    try:
-        isolated_execution_timeout = resolve_isolated_execution_timeout(args)
-    except ValueError as e:
-        logger.error(f"Invalid execution timeout: {e}")
-        return 1
+    isolated_execution_timeout = resolve_isolated_execution_timeout(args)
 
     # Validate flags for multi-file mode
     if len(files) > 1:
@@ -473,6 +438,23 @@ def cmd_run(args: argparse.Namespace) -> int:
         return 1
 
     return 0
+
+
+def _positive_float(value: str) -> float:
+    x = float(value)
+    if x <= 0:
+        raise argparse.ArgumentTypeError("must be a positive number")
+    return x
+
+
+def resolve_isolated_execution_timeout(args: argparse.Namespace) -> float:
+    """Seconds before isolated subprocess runs are killed.
+
+    From ``--execution-timeout`` when set; otherwise 60.
+    """
+    if getattr(args, "execution_timeout", None) is not None:
+        return float(args.execution_timeout)
+    return 60.0
 
 
 if __name__ == "__main__":
