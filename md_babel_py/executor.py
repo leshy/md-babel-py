@@ -53,12 +53,21 @@ def substitute_params(
 class Executor:
     """Execute code blocks, handling both isolated and session-based execution."""
 
-    def __init__(self, config: Config, cache_enabled: bool = True, source_file: Path | None = None):
+    def __init__(
+        self,
+        config: Config,
+        cache_enabled: bool = True,
+        source_file: Path | None = None,
+        *,
+        isolated_execution_timeout: float = 60.0,
+    ):
         self.config = config
         self.session_manager = SessionManager()
         self.cache = Cache(enabled=cache_enabled)
         # Directory containing the source markdown file (for resolving relative paths)
         self.source_dir = source_file.parent.resolve() if source_file else Path.cwd()
+        # Max seconds for subprocess.run on each non-session code block (openscad, python file mode, etc.)
+        self.isolated_execution_timeout = isolated_execution_timeout
 
     def _resolve_output_path(self, output_param: str) -> tuple[Path, str]:
         """Resolve output path relative to source file directory.
@@ -177,7 +186,7 @@ class Executor:
                 input=stdin_input,
                 capture_output=True,
                 text=True,
-                timeout=60,  # Longer timeout for tools like openscad
+                timeout=self.isolated_execution_timeout,
             )
 
             if result.returncode != 0:
@@ -205,7 +214,9 @@ class Executor:
                 stdout="",
                 stderr="",
                 success=False,
-                error_message="Execution timed out after 60 seconds",
+                error_message=(
+                    f"Execution timed out after {self.isolated_execution_timeout:g} seconds"
+                ),
             )
         except Exception as e:
             logger.exception("Execution failed")

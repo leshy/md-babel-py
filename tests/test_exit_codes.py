@@ -44,6 +44,20 @@ raise ValueError("boom")
     assert result.returncode == 1, f"Expected 1, got {result.returncode}: {result.stderr}"
 
 
+def test_execution_timeout_kills_slow_isolated_block():
+    """--execution-timeout stops an isolated subprocess that runs too long."""
+    content = """
+```python
+import time
+time.sleep(30)
+```
+"""
+    result = run_md_babel(content, ["--execution-timeout", "1"])
+    assert result.returncode == 1, f"Expected 1, got {result.returncode}: {result.stderr}"
+    assert "timed out" in result.stderr.lower()
+    assert "1" in result.stderr or "after" in result.stderr.lower()
+
+
 def test_expected_error_success():
     """expected-error block that fails returns 0."""
     content = """
