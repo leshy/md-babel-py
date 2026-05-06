@@ -53,7 +53,7 @@ def main() -> int:
         type=_positive_float,
         default=None,
         metavar="SEC",
-        help="Max seconds for each isolated code block subprocess (default: 60)",
+        help="Max seconds per code block (isolated subprocess and session reads) (default: 120)",
     )
 
     args = parser.parse_args()
@@ -286,7 +286,7 @@ def run_single_file(
     file_path: Path,
     config: Config,
     args: argparse.Namespace,
-    isolated_execution_timeout: float,
+    execution_timeout: float,
 ) -> tuple[int, int, list[str]]:
     """Process a single markdown file.
 
@@ -294,7 +294,7 @@ def run_single_file(
         file_path: Path to the markdown file.
         config: Loaded configuration.
         args: Command-line arguments.
-        isolated_execution_timeout: Subprocess timeout for isolated evaluators (seconds).
+        execution_timeout: Per-block timeout in seconds (isolated and session).
 
     Returns:
         Tuple of (blocks_executed, blocks_total, test_failures).
@@ -341,7 +341,7 @@ def run_single_file(
         config,
         cache_enabled=cache_enabled,
         source_file=file_path,
-        isolated_execution_timeout=isolated_execution_timeout,
+        execution_timeout=execution_timeout,
     )
     try:
         results, test_failures, _ = execute_blocks(executor, executable_blocks)
@@ -394,7 +394,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             logger.error(f"Error: Not a markdown file: {args.file}")
         return 0
 
-    isolated_execution_timeout = resolve_isolated_execution_timeout(args)
+    execution_timeout = resolve_execution_timeout(args)
 
     # Validate flags for multi-file mode
     if len(files) > 1:
@@ -415,7 +415,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             logger.info(f"\n{'='*60}\nProcessing: {file_path}\n{'='*60}")
 
         success, total, failures = run_single_file(
-            file_path, config, args, isolated_execution_timeout
+            file_path, config, args, execution_timeout
         )
         total_success += success
         total_blocks += total
@@ -447,14 +447,14 @@ def _positive_float(value: str) -> float:
     return x
 
 
-def resolve_isolated_execution_timeout(args: argparse.Namespace) -> float:
-    """Seconds before isolated subprocess runs are killed.
+def resolve_execution_timeout(args: argparse.Namespace) -> float:
+    """Seconds before code block execution is killed (isolated and session).
 
-    From ``--execution-timeout`` when set; otherwise 60.
+    From ``--execution-timeout`` when set; otherwise 120.
     """
     if getattr(args, "execution_timeout", None) is not None:
         return float(args.execution_timeout)
-    return 60.0
+    return 120.0
 
 
 if __name__ == "__main__":

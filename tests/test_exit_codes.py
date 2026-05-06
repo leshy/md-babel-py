@@ -58,6 +58,19 @@ time.sleep(30)
     assert "1" in result.stderr or "after" in result.stderr.lower()
 
 
+def test_execution_timeout_kills_slow_session_block():
+    """--execution-timeout also stops a session-based block that runs too long."""
+    content = """
+```python session=main
+import time
+time.sleep(30)
+```
+"""
+    result = run_md_babel(content, ["--execution-timeout", "1"])
+    assert result.returncode == 1, f"Expected 1, got {result.returncode}: {result.stderr}"
+    assert "timed out" in result.stdout.lower() + result.stderr.lower()
+
+
 def test_expected_error_success():
     """expected-error block that fails returns 0."""
     content = """

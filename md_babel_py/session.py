@@ -95,8 +95,9 @@ class SessionManager:
     Sessions are created on first use and reused for subsequent executions.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, execution_timeout: float = 120.0) -> None:
         self.sessions: dict[tuple[str, str | None], Session] = {}
+        self.execution_timeout = execution_timeout
 
     def get_or_create_session(
         self,
@@ -218,7 +219,7 @@ class SessionManager:
         try:
             # Use select for timeout
             start_time = time.time()
-            timeout = 30.0
+            timeout = self.execution_timeout
 
             while True:
                 if time.time() - start_time > timeout:
@@ -226,7 +227,7 @@ class SessionManager:
                         stdout="",
                         stderr="",
                         success=False,
-                        error_message="Execution timed out",
+                        error_message=f"Execution timed out after {timeout:g} seconds",
                     )
 
                 readable, _, _ = select.select([stdout], [], [], 0.1)
@@ -313,13 +314,13 @@ class SessionManager:
 
         # Read output until we see the marker
         try:
-            output = self._read_until_marker(session, timeout=30)
+            output = self._read_until_marker(session, timeout=self.execution_timeout)
         except TimeoutError:
             return ExecutionResult(
                 stdout="",
                 stderr="",
                 success=False,
-                error_message="Execution timed out",
+                error_message=f"Execution timed out after {self.execution_timeout:g} seconds",
             )
         except Exception as e:
             logger.exception("Error reading session output")

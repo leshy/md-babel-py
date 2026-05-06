@@ -59,15 +59,15 @@ class Executor:
         cache_enabled: bool = True,
         source_file: Path | None = None,
         *,
-        isolated_execution_timeout: float = 60.0,
+        execution_timeout: float = 120.0,
     ):
         self.config = config
-        self.session_manager = SessionManager()
+        self.session_manager = SessionManager(execution_timeout=execution_timeout)
         self.cache = Cache(enabled=cache_enabled)
         # Directory containing the source markdown file (for resolving relative paths)
         self.source_dir = source_file.parent.resolve() if source_file else Path.cwd()
-        # Max seconds for subprocess.run on each non-session code block (openscad, python file mode, etc.)
-        self.isolated_execution_timeout = isolated_execution_timeout
+        # Max seconds per code block for both isolated subprocess runs and session reads.
+        self.execution_timeout = execution_timeout
 
     def _resolve_output_path(self, output_param: str) -> tuple[Path, str]:
         """Resolve output path relative to source file directory.
@@ -186,7 +186,7 @@ class Executor:
                 input=stdin_input,
                 capture_output=True,
                 text=True,
-                timeout=self.isolated_execution_timeout,
+                timeout=self.execution_timeout,
             )
 
             if result.returncode != 0:
@@ -215,7 +215,7 @@ class Executor:
                 stderr="",
                 success=False,
                 error_message=(
-                    f"Execution timed out after {self.isolated_execution_timeout:g} seconds"
+                    f"Execution timed out after {self.execution_timeout:g} seconds"
                 ),
             )
         except Exception as e:
