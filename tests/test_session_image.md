@@ -5,8 +5,7 @@ bla = "from previous code block"
 print(bla)
 ```
 
-<!--Result:-->
-```
+```results
 from previous code block
 ```
 
@@ -20,7 +19,6 @@ with open("{output}", "w") as f:
 print("wrote", "{output}")
 ```
 
-<!--Result:-->
 ![output](output/test.svg)
 
 
@@ -33,7 +31,6 @@ assert bla in content, f"Expected '{bla}' in SVG"
 print("SVG verified:", content[:50] + "...")
 ```
 
-<!--Result:-->
-```
+```results
 SVG verified: <svg xmlns="http://www.w3.org/2000/svg" width="300...
 ```

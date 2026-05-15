@@ -47,6 +47,7 @@ def main() -> int:
     run_parser.add_argument("--lang", help="Only execute these languages (comma-separated)")
     run_parser.add_argument("--dry-run", action="store_true", help="Show what would be executed")
     run_parser.add_argument("--no-cache", action="store_true", help="Disable caching, always re-execute blocks")
+    run_parser.add_argument("--quiet", "-q", action="store_true", help="Suppress live streaming of code-block stdout/stderr")
     run_parser.add_argument("--recursive", "-r", action="store_true", help="Process all .md files in directory recursively")
     run_parser.add_argument(
         "--execution-timeout",
@@ -77,6 +78,20 @@ def main() -> int:
         return 1
 
 
+class _ColorFormatter(logging.Formatter):
+    _COLORS = {
+        logging.WARNING: "\x1b[33m",   # yellow
+        logging.ERROR: "\x1b[31m",     # red
+        logging.CRITICAL: "\x1b[31m",  # red
+    }
+    _RESET = "\x1b[0m"
+
+    def format(self, record: logging.LogRecord) -> str:
+        msg = super().format(record)
+        color = self._COLORS.get(record.levelno)
+        return f"{color}{msg}{self._RESET}" if color else msg
+
+
 def setup_logging(verbose: bool = False) -> None:
     """Configure logging for the application.
 
@@ -84,11 +99,13 @@ def setup_logging(verbose: bool = False) -> None:
         verbose: If True, enable DEBUG level logging.
     """
     level = logging.DEBUG if verbose else logging.INFO
-    logging.basicConfig(
-        level=level,
-        format="%(message)s",
-        stream=sys.stderr,
-    )
+    handler = logging.StreamHandler(sys.stderr)
+    fmt_cls = _ColorFormatter if sys.stderr.isatty() else logging.Formatter
+    handler.setFormatter(fmt_cls("%(message)s"))
+    root = logging.getLogger()
+    root.handlers.clear()
+    root.addHandler(handler)
+    root.setLevel(level)
     # Quieter format for non-verbose
     if not verbose:
         logging.getLogger("md_babel_py").setLevel(logging.INFO)
@@ -162,9 +179,13 @@ def execute_blocks(
     test_failures: list[str] = []
     stopped_early = False
 
+    use_color = sys.stderr.isatty()
     for i, block in enumerate(blocks, 1):
         flags_str = format_block_flags(block)
-        logger.info(f"[{i}/{len(blocks)}] Executing {block.language}{flags_str} block at line {block.start_line}...")
+        prefix = f"[{i}/{len(blocks)}]"
+        if use_color:
+            prefix = f"\x1b[32m{prefix}\x1b[0m"
+        logger.info(f"{prefix} Executing {block.language}{flags_str} block at line {block.start_line}...")
 
         result = executor.execute(block)
 
@@ -342,6 +363,7 @@ def run_single_file(
         cache_enabled=cache_enabled,
         source_file=file_path,
         execution_timeout=execution_timeout,
+        stream=not getattr(args, "quiet", False),
     )
     try:
         results, test_failures, _ = execute_blocks(executor, executable_blocks)
@@ -410,9 +432,13 @@ def cmd_run(args: argparse.Namespace) -> int:
     total_blocks = 0
     all_failures: list[str] = []
 
+    use_color = sys.stderr.isatty()
     for file_path in files:
         if len(files) > 1:
-            logger.info(f"\n{'='*60}\nProcessing: {file_path}\n{'='*60}")
+            if use_color:
+                logger.info(f"\n\x1b[32m{file_path}\x1b[0m")
+            else:
+                logger.info(f"\n{file_path}")
 
         success, total, failures = run_single_file(
             file_path, config, args, execution_timeout
@@ -423,8 +449,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     # Summary for multi-file mode
     if len(files) > 1:
-        logger.info(f"\n{'='*60}")
-        logger.info(f"Total: {len(files)} files, {total_success}/{total_blocks} blocks executed successfully.")
+        logger.info(f"\nTotal: {len(files)} files, {total_success}/{total_blocks} blocks executed successfully.")
     elif total_blocks > 0:
         logger.info(f"\nDone: {total_success}/{total_blocks} blocks executed successfully.")
 

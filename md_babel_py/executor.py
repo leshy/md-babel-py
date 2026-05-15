@@ -3,8 +3,11 @@
 import logging
 import os
 import subprocess
+import sys
 import tempfile
+import threading
 from pathlib import Path
+from typing import IO
 
 from .cache import Cache, compute_cache_key
 from .config import Config, EvaluatorConfig, get_evaluator
@@ -60,9 +63,14 @@ class Executor:
         source_file: Path | None = None,
         *,
         execution_timeout: float = 120.0,
+        stream: bool = True,
     ):
         self.config = config
-        self.session_manager = SessionManager(execution_timeout=execution_timeout)
+        self.stream = stream
+        self.session_manager = SessionManager(
+            execution_timeout=execution_timeout,
+            stream=stream,
+        )
         self.cache = Cache(enabled=cache_enabled)
         # Directory containing the source markdown file (for resolving relative paths)
         self.source_dir = source_file.parent.resolve() if source_file else Path.cwd()
@@ -113,6 +121,7 @@ class Executor:
         cached = self.cache.get(cache_key, output_file=output_file)
         if cached is not None:
             logger.debug(f"Cache hit for {block.language} block at line {block.start_line}")
+            self._echo_cached(cached)
             return cached
 
         # Execute and cache result
@@ -121,6 +130,20 @@ class Executor:
             self.cache.put(cache_key, result, output_file=output_file)
 
         return result
+
+    def _echo_cached(self, cached: ExecutionResult) -> None:
+        """Echo cached stdout/stderr to terminal so the run log stays consistent."""
+        if not self.stream:
+            return
+        if cached.stdout:
+            sys.stderr.write(cached.stdout)
+            if not cached.stdout.endswith("\n"):
+                sys.stderr.write("\n")
+        if cached.stderr:
+            sys.stderr.write(cached.stderr)
+            if not cached.stderr.endswith("\n"):
+                sys.stderr.write("\n")
+        sys.stderr.flush()
 
     def _execute_isolated(self, block: CodeBlock, evaluator: EvaluatorConfig) -> ExecutionResult:
         """Execute a code block in isolation (subprocess)."""
@@ -176,25 +199,30 @@ class Executor:
                 input_file=input_file_path,
             )
             cmd = [evaluator.path] + args
+            # If the command spawns "python"/"python3" (either directly or via
+            # /usr/bin/env), use the same interpreter running md-babel-py. Without
+            # this, an editable-installed md-babel-py in a venv finds the wrong
+            # python on PATH — the user's code can't import packages that exist
+            # only in the venv's site-packages.
+            if cmd and cmd[0] in ("python", "python3"):
+                cmd[0] = sys.executable
+            elif len(cmd) >= 2 and cmd[0].endswith("/env") and cmd[1] in ("python", "python3"):
+                cmd[:2] = [sys.executable]
             logger.debug(f"Executing command: {cmd}")
 
             # Determine stdin
             stdin_input = None if evaluator.input_extension else code
 
-            result = subprocess.run(
-                cmd,
-                input=stdin_input,
-                capture_output=True,
-                text=True,
-                timeout=self.execution_timeout,
+            returncode, captured_stdout, captured_stderr = self._run_streaming(
+                cmd, stdin_input
             )
 
-            if result.returncode != 0:
+            if returncode != 0:
                 return ExecutionResult(
-                    stdout=result.stdout,
-                    stderr=result.stderr,
+                    stdout=captured_stdout,
+                    stderr=captured_stderr,
                     success=False,
-                    error_message=f"Exit code: {result.returncode}",
+                    error_message=f"Exit code: {returncode}",
                 )
 
             # Read output from file or stdout
@@ -202,11 +230,11 @@ class Executor:
                 # Return image reference with relative path for markdown
                 stdout = f"![output]({output_rel_path})"
             else:
-                stdout = result.stdout
+                stdout = captured_stdout
 
             return ExecutionResult(
                 stdout=stdout,
-                stderr=result.stderr,
+                stderr=captured_stderr,
                 success=True,
             )
         except subprocess.TimeoutExpired:
@@ -233,6 +261,82 @@ class Executor:
                     os.unlink(temp_path)
                 except OSError:
                     pass
+
+    def _run_streaming(
+        self, cmd: list[str], stdin_input: str | None
+    ) -> tuple[int, str, str]:
+        """Run cmd via Popen, tee stdout/stderr to terminal, return (rc, out, err).
+
+        Raises subprocess.TimeoutExpired (kills the process first) so the caller's
+        existing handler can format the error message.
+        """
+        proc = subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE if stdin_input is not None else subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        )
+
+        out_buf: list[str] = []
+        err_buf: list[str] = []
+
+        def pump(src: IO[str], buf: list[str], sink: IO[str] | None) -> None:
+            try:
+                while True:
+                    chunk = src.read(1024)
+                    if not chunk:
+                        break
+                    buf.append(chunk)
+                    if sink is not None:
+                        try:
+                            sink.write(chunk)
+                            sink.flush()
+                        except Exception:
+                            pass
+            finally:
+                try:
+                    src.close()
+                except Exception:
+                    pass
+
+        # Stream both pipes to stderr so --stdout (markdown to real stdout) stays clean.
+        sink = sys.stderr if self.stream else None
+        assert proc.stdout is not None and proc.stderr is not None
+        t_out = threading.Thread(target=pump, args=(proc.stdout, out_buf, sink), daemon=True)
+        t_err = threading.Thread(target=pump, args=(proc.stderr, err_buf, sink), daemon=True)
+        t_out.start()
+        t_err.start()
+
+        try:
+            if stdin_input is not None and proc.stdin is not None:
+                try:
+                    proc.stdin.write(stdin_input)
+                except BrokenPipeError:
+                    pass
+                finally:
+                    try:
+                        proc.stdin.close()
+                    except Exception:
+                        pass
+
+            try:
+                returncode = proc.wait(timeout=self.execution_timeout)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+                t_out.join(timeout=1.0)
+                t_err.join(timeout=1.0)
+                raise
+
+            t_out.join()
+            t_err.join()
+            return returncode, "".join(out_buf), "".join(err_buf)
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait()
 
     def _execute_session(self, block: CodeBlock, evaluator: EvaluatorConfig) -> ExecutionResult:
         """Execute a code block in a persistent session."""

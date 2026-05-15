@@ -71,9 +71,9 @@ print("BBB")
         b_content = (root / "subdir" / "b.md").read_text()
 
         assert "AAA" in a_content
-        assert "<!--Result:-->" in a_content
+        assert "```results" in a_content
         assert "BBB" in b_content
-        assert "<!--Result:-->" in b_content
+        assert "```results" in b_content
 
 
 def test_directory_without_recursive_only_top_level():
@@ -99,11 +99,11 @@ print("nested")
 
         # Top-level file should be processed
         top_content = (root / "top.md").read_text()
-        assert "<!--Result:-->" in top_content
+        assert "```results" in top_content
 
         # Nested file should NOT be processed
         nested_content = (root / "subdir" / "nested.md").read_text()
-        assert "<!--Result:-->" not in nested_content
+        assert "```results" not in nested_content
 
 
 def test_recursive_stdout_not_supported():
@@ -204,7 +204,7 @@ def test_recursive_ignores_non_md():
 
         # .md file processed
         assert "md" in (root / "doc.md").read_text()
-        assert "<!--Result:-->" in (root / "doc.md").read_text()
+        assert "```results" in (root / "doc.md").read_text()
 
         # .txt file untouched (no Result added)
-        assert "<!--Result:-->" not in (root / "readme.txt").read_text()
+        assert "```results" not in (root / "readme.txt").read_text()

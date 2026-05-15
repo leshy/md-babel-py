@@ -9,8 +9,7 @@ x = 1
 print(x)
 ```
 
-<!--Result:-->
-```
+```results
 1
 ```
 
@@ -19,8 +18,7 @@ print(x)
 print(undefined_variable)
 ```
 
-<!--Error:-->
-```
+```error
 Traceback (most recent call last):
   File "/home/lesh/coding/md-babel-python/md_babel_py/session_server.py", line 56, in main
     result = eval(compile(code, "<block>", "eval"), namespace)
@@ -36,7 +34,6 @@ NameError: name 'undefined_variable' is not defined
 print("session still alive")
 ```
 
-<!--Result:-->
-```
+```results
 session still alive
 ```

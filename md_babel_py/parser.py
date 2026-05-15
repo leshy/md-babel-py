@@ -38,15 +38,21 @@ FENCE_PATTERN = re.compile(
     re.MULTILINE | re.DOTALL
 )
 
-# Pattern for result/error blocks (with code fence)
+# Pattern for new-style result/error blocks: ```results ... ``` or ```error ... ```
 RESULT_PATTERN_FENCED = re.compile(
+    r'^```(results|error)[^\n]*\n(.*?)^```[ \t]*$',
+    re.MULTILINE | re.DOTALL
+)
+
+# Legacy pattern: <!--Result:--> / <!--Error:--> + plain fence (read-only, for migration)
+RESULT_PATTERN_FENCED_LEGACY = re.compile(
     r'^<!--(Result|Error):-->\n```[^\n]*\n(.*?)^```[ \t]*$',
     re.MULTILINE | re.DOTALL
 )
 
-# Pattern for result blocks with image output (no code fence)
+# Pattern for bare image result line (with optional legacy <!--Result:--> marker above)
 RESULT_PATTERN_IMAGE = re.compile(
-    r'^<!--(Result):-->\n(!\[[^\]]*\]\([^)]+\))[ \t]*$',
+    r'^(?:<!--Result:-->\n)?(!\[[^\]]*\]\([^)]+\))[ \t]*$',
     re.MULTILINE
 )
 
@@ -126,6 +132,8 @@ def find_code_blocks(content: str) -> list[CodeBlock]:
         language, metadata, flags = parse_info_string(info_string)
         if not language:
             continue  # Skip blocks without language
+        if language in ("results", "error"):
+            continue  # These are output markers, not executable code
 
         # Calculate line numbers (1-indexed)
         start_pos = match.start()
@@ -162,11 +170,33 @@ def find_code_blocks(content: str) -> list[CodeBlock]:
 
 
 def find_result_blocks(content: str) -> list[ResultBlock]:
-    """Find all result/error blocks in markdown content."""
+    """Find all result/error blocks in markdown content.
+
+    Recognizes both new-style ```results / ```error fences and legacy
+    <!--Result:-->/<!--Error:--> + fence/image forms.
+    """
     blocks = []
 
-    # Find fenced result blocks
+    # New-style fenced result blocks: ```results / ```error
     for match in RESULT_PATTERN_FENCED.finditer(content):
+        lang = match.group(1)
+        result_content = match.group(2)
+        kind = "Result" if lang == "results" else "Error"
+
+        start_pos = match.start()
+        end_pos = match.end()
+        start_line = content[:start_pos].count('\n') + 1
+        end_line = content[:end_pos].count('\n') + 1
+
+        blocks.append(ResultBlock(
+            kind=kind,
+            content=result_content.rstrip('\n'),
+            start_line=start_line,
+            end_line=end_line,
+        ))
+
+    # Legacy fenced result blocks: <!--Result:--> / <!--Error:--> + ``` fence
+    for match in RESULT_PATTERN_FENCED_LEGACY.finditer(content):
         kind = match.group(1)
         result_content = match.group(2)
 
@@ -182,31 +212,33 @@ def find_result_blocks(content: str) -> list[ResultBlock]:
             end_line=end_line,
         ))
 
-    # Find image result blocks (no code fence)
-    for match in RESULT_PATTERN_IMAGE.finditer(content):
-        kind = match.group(1)
-        result_content = match.group(2)
-
-        start_pos = match.start()
-        end_pos = match.end()
-        start_line = content[:start_pos].count('\n') + 1
-        end_line = content[:end_pos].count('\n') + 1
-
-        blocks.append(ResultBlock(
-            kind=kind,
-            content=result_content,
-            start_line=start_line,
-            end_line=end_line,
-        ))
-
     return blocks
+
+
+_IMAGE_LINE_RE = re.compile(r'^!\[[^\]]*\]\(([^)]+)\)[ \t]*$')
+
+
+def _is_result_opening(stripped: str) -> bool:
+    """Check if a line opens a result fence (new ``` or legacy comment)."""
+    if stripped in ('<!--Result:-->', '<!--Error:-->'):
+        return True
+    if stripped.startswith('```'):
+        info = stripped[3:].strip()
+        first_tok = info.split()[0] if info else ''
+        return first_tok in ('results', 'error')
+    return False
 
 
 def find_block_result_range(content: str, block: CodeBlock) -> tuple[int, int] | None:
     """Find the range of any existing result/error block following a code block.
 
     Returns (start_line, end_line) of the result block(s), or None if no result exists.
-    Handles both fenced code blocks and image results.
+    Handles:
+      - New-style ```results / ```error fences
+      - Legacy <!--Result:--> / <!--Error:--> markers (with following fence or image)
+      - Bare image results (only when the image path matches the block's `output=`
+        param exactly, so user-authored prose images and `output=none` markers
+        don't get clobbered)
     """
     lines = content.split('\n')
     line_idx = block.end_line  # 0-indexed position after the block
@@ -226,55 +258,75 @@ def find_block_result_range(content: str, block: CodeBlock) -> tuple[int, int] |
     if line_idx >= len(lines):
         return None
 
-    # Check for result/error comment
-    result_start = None
-    result_end = None
+    result_start: int | None = None
+    result_end: int | None = None
+    output_path = block.params.get("output", "")
 
     while line_idx < len(lines):
         line = lines[line_idx]
+        stripped = line.strip()
+        marker_start_idx = line_idx  # 0-indexed line where this result starts
+        consumed_end: int | None = None
 
-        if line.strip() in ('<!--Result:-->', '<!--Error:-->'):
-            if result_start is None:
-                # Include preceding blank line if present
-                if first_blank_idx is not None:
-                    result_start = first_blank_idx + 1  # Convert to 1-indexed
-                else:
-                    result_start = line_idx + 1  # Convert to 1-indexed
-
-            # Check what follows the comment
-            if line_idx + 1 < len(lines):
-                next_line = lines[line_idx + 1]
-
-                if next_line.startswith('```'):
-                    # Fenced code block - find closing fence
-                    fence_line = line_idx + 1
-                    for i in range(fence_line + 1, len(lines)):
-                        if lines[i].strip() == '```':
-                            result_end = i + 1  # 1-indexed, inclusive
-                            line_idx = i + 1
-                            break
-                    else:
-                        # No closing fence found
+        if stripped.startswith('```'):
+            # New-style fence: ```results / ```error
+            info = stripped[3:].strip()
+            first_tok = info.split()[0] if info else ''
+            if first_tok in ('results', 'error'):
+                for i in range(line_idx + 1, len(lines)):
+                    if lines[i].strip() == '```':
+                        consumed_end = i + 1  # 1-indexed, inclusive
+                        line_idx = i + 1
                         break
-                elif next_line.startswith('!['):
-                    # Image result - just this line
-                    result_end = line_idx + 2  # 1-indexed (comment + image line)
-                    line_idx = line_idx + 2
                 else:
-                    break
+                    break  # No closing fence
             else:
                 break
 
-            # Check for another result/error block
-            while line_idx < len(lines) and not lines[line_idx].strip():
-                line_idx += 1
-
-            if line_idx >= len(lines):
+        elif stripped in ('<!--Result:-->', '<!--Error:-->'):
+            # Legacy marker: followed by fence or image
+            if line_idx + 1 >= len(lines):
+                break
+            next_line = lines[line_idx + 1]
+            if next_line.startswith('```'):
+                for i in range(line_idx + 2, len(lines)):
+                    if lines[i].strip() == '```':
+                        consumed_end = i + 1
+                        line_idx = i + 1
+                        break
+                else:
+                    break
+            elif next_line.startswith('!['):
+                consumed_end = line_idx + 2
+                line_idx += 2
+            else:
                 break
 
-            if lines[line_idx].strip() not in ('<!--Result:-->', '<!--Error:-->'):
-                break
+        elif output_path and (m := _IMAGE_LINE_RE.match(line)) and m.group(1) == output_path:
+            # Bare image result (new format) — only when the path matches output=
+            consumed_end = line_idx + 1  # 1-indexed, inclusive
+            line_idx += 1
+
         else:
+            break
+
+        if consumed_end is None:
+            break
+
+        if result_start is None:
+            # Include preceding blank line if present
+            if first_blank_idx is not None:
+                result_start = first_blank_idx + 1  # Convert to 1-indexed
+            else:
+                result_start = marker_start_idx + 1  # Convert to 1-indexed
+        result_end = consumed_end
+
+        # After consuming, look for an adjacent error block
+        while line_idx < len(lines) and not lines[line_idx].strip():
+            line_idx += 1
+        if line_idx >= len(lines):
+            break
+        if not _is_result_opening(lines[line_idx].strip()):
             break
 
     if result_start and result_end:

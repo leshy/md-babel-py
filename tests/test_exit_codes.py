@@ -120,7 +120,7 @@ print(x)
     assert result.returncode == 0, f"Expected 0, got {result.returncode}: {result.stderr}"
     assert "42" in result.stdout
     # Should only have one Result block (from second block)
-    assert result.stdout.count("<!--Result:-->") == 1
+    assert result.stdout.count("```results") == 1
 
 
 def test_unconfigured_language_warning():
@@ -153,9 +153,9 @@ print("zzz")
     result = run_md_babel(content)
     assert result.returncode == 1
     # First block ran
-    assert result.stdout.count("<!--Result:-->") == 1
+    assert result.stdout.count("```results") == 1
     # Second block failed
-    assert result.stdout.count("<!--Error:-->") == 1
+    assert result.stdout.count("```error") == 1
     # Third block never ran (only 2 blocks executed out of 3)
     assert "2/3" in result.stderr or "1/2" in result.stderr  # Progress shows we stopped early
 
@@ -169,10 +169,10 @@ print("hello")
 """
     result = run_md_babel(content)
     assert result.returncode == 0
-    assert "<details><summary>Python</summary>" in result.stdout
+    assert "<details>\n<summary>Python</summary>" in result.stdout
     assert "</details>" in result.stdout
     # Result should be after </details>
-    assert result.stdout.index("</details>") < result.stdout.index("<!--Result:-->")
+    assert result.stdout.index("</details>") < result.stdout.index("```results")
 
 
 def test_fold_custom_summary():
@@ -184,7 +184,7 @@ print("hello")
 """
     result = run_md_babel(content)
     assert result.returncode == 0
-    assert "<details><summary>Show Code</summary>" in result.stdout
+    assert "<details>\n<summary>Show Code</summary>" in result.stdout
     assert "</details>" in result.stdout
 
 

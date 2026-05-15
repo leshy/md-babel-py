@@ -7,8 +7,7 @@ x = 42
 print(f"x is {x}")
 ```
 
-<!--Result:-->
-```
+```results
 x is 42
 ```
 
@@ -17,8 +16,7 @@ y = x * 2
 print(f"y is {y}")
 ```
 
-<!--Result:-->
-```
+```results
 y is 84
 ```
 
@@ -29,8 +27,7 @@ y is 84
 print(f"x is {x}")
 ```
 
-<!--Error:-->
-```
+```error
 Traceback (most recent call last):
   File "/tmp/tmpjy6my2m7.py", line 2, in <module>
     print(f"x is {x}")
@@ -59,8 +56,7 @@ z = y + 10
 print(f"z is {z}")
 ```
 
-<!--Result:-->
-```
+```results
 z is 94
 ```
 
@@ -73,7 +69,6 @@ digraph {
 }
 ```
 
-<!--Result:-->
 ![output](tests/output/graphviz-basic.svg)
 
 ```graphviz output=tests/output/graphviz-args.svg args=-Grankdir=TB
@@ -83,6 +78,5 @@ digraph {
 }
 ```
 
-<!--Result:-->
 ![output](tests/output/graphviz-args.svg)
 

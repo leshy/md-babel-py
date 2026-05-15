@@ -65,11 +65,14 @@ def apply_results(content: str, results: list[BlockResult]) -> str:
         existing_range = find_block_result_range(content, block)
 
         if existing_range:
-            # Compare existing vs new output (normalized to ignore memory addresses)
-            existing_content = extract_result_content(content, block)
-            new_content = '\n'.join(new_result_lines)
+            # Compare existing vs new output (normalized to ignore memory addresses).
+            # Strip whitespace because the existing range absorbs a preceding blank
+            # line that isn't part of new_result_lines — comparison must be
+            # whitespace-insensitive at the edges so identical content is a no-op.
+            existing_content = (extract_result_content(content, block) or '').strip()
+            new_content = '\n'.join(new_result_lines).strip()
 
-            if normalize_output(existing_content or '') == normalize_output(new_content):
+            if normalize_output(existing_content) == normalize_output(new_content):
                 # No meaningful change - skip this block
                 continue
 
@@ -116,15 +119,16 @@ def apply_fold_wrapper(lines: list[str], block: CodeBlock) -> tuple[list[str], s
     start_idx = block.start_line - 1  # 0-indexed
     end_idx = block.end_line  # 0-indexed position after block
 
-    # Check if already wrapped (look for <details> before the block)
+    # Check if already wrapped (look for <details> before the block).
+    # Skip blank lines, HTML comments, and <summary>...</summary> in between.
     already_wrapped = False
-    for i in range(start_idx - 1, max(start_idx - 3, -1), -1):
+    for i in range(start_idx - 1, max(start_idx - 4, -1), -1):
         line = lines[i].strip()
         if line.startswith('<details'):
             already_wrapped = True
             break
-        elif line and not line.startswith('<!--'):
-            # Non-empty, non-comment line means not wrapped
+        elif line and not line.startswith('<!--') and not line.startswith('<summary'):
+            # Non-empty, non-comment, non-summary line means not wrapped
             break
 
     if already_wrapped:
@@ -137,7 +141,7 @@ def apply_fold_wrapper(lines: list[str], block: CodeBlock) -> tuple[list[str], s
         summary = block.language.capitalize()
 
     # Insert <details><summary> before code block and </details> after
-    details_open = [f'<details><summary>{summary}</summary>', '']
+    details_open = ['<details>', f'<summary>{summary}</summary>', '']
     details_close = ['', '</details>']
 
     lines = (
@@ -161,23 +165,19 @@ def build_result_block(result: ExecutionResult) -> list[str]:
 
     Only includes stderr/error block if the execution failed (success=False).
     Successful executions only show stdout.
-    Image outputs (starting with ![) are not wrapped in code blocks.
+    Image outputs (starting with ![) are emitted as bare markdown image syntax.
     """
     blocks: list[str] = []
 
     # Add stdout as Result block
     stdout = result.stdout.strip()
     if stdout:
-        # Check if output is an image reference (don't wrap in code block)
+        # Check if output is an image reference (no wrapper, renders inline)
         if stdout.startswith('!['):
-            blocks.extend([
-                '<!--Result:-->',
-                stdout,
-            ])
+            blocks.append(stdout)
         else:
             blocks.extend([
-                '<!--Result:-->',
-                '```',
+                '```results',
                 result.stdout.rstrip(),
                 '```',
             ])
@@ -193,8 +193,7 @@ def build_result_block(result: ExecutionResult) -> list[str]:
 
         if error_content:
             blocks.extend([
-                '<!--Error:-->',
-                '```',
+                '```error',
                 error_content,
                 '```',
             ])

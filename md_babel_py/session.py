@@ -11,10 +11,13 @@ Two protocols are supported:
 import json
 import logging
 import os
+import queue
 import select
 import subprocess
+import sys
+import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .config import SessionConfig
 from .types import ExecutionResult
@@ -86,6 +89,10 @@ class Session:
     protocol: str  # "json" or "marker"
     marker: str  # Only used for marker protocol
     prompts: list[str]  # Only used for marker protocol
+    # JSON protocol only: background reader thread that pumps stdout lines
+    # into the queue. Avoids select+readline buffering pitfalls.
+    line_queue: "queue.Queue[str | None]" = field(default_factory=queue.Queue)
+    reader_thread: threading.Thread | None = None
 
 
 class SessionManager:
@@ -95,9 +102,25 @@ class SessionManager:
     Sessions are created on first use and reused for subsequent executions.
     """
 
-    def __init__(self, execution_timeout: float = 120.0) -> None:
+    def __init__(
+        self,
+        execution_timeout: float = 120.0,
+        *,
+        stream: bool = True,
+    ) -> None:
         self.sessions: dict[tuple[str, str | None], Session] = {}
         self.execution_timeout = execution_timeout
+        self.stream = stream
+
+    def _emit(self, text: str) -> None:
+        """Write live output to stderr if streaming is enabled."""
+        if not self.stream or not text:
+            return
+        try:
+            sys.stderr.write(text)
+            sys.stderr.flush()
+        except Exception:
+            pass
 
     def get_or_create_session(
         self,
@@ -113,10 +136,18 @@ class SessionManager:
             logger.debug(f"Session {session_key} died, creating new one")
             del self.sessions[session_key]
 
-        logger.debug(f"Creating new session {session_key} with command: {session_config.command}")
+        command = list(session_config.command)
+        # If the session shells out to "python"/"python3", use the same interpreter
+        # we're running under. Otherwise an editable install in a venv breaks when
+        # PATH resolves "python3" to a different interpreter that doesn't have
+        # md_babel_py importable (e.g. session_server fails with ModuleNotFoundError).
+        if command and command[0] in ("python", "python3"):
+            command[0] = sys.executable
+
+        logger.debug(f"Creating new session {session_key} with command: {command}")
 
         process = subprocess.Popen(
-            session_config.command,
+            command,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -139,8 +170,34 @@ class SessionManager:
         # For marker protocol, drain startup output
         if session_config.protocol == "marker":
             self._drain_startup(session)
+        elif session_config.protocol == "json":
+            # Start a background reader so we can dequeue lines without being
+            # tripped up by Python's TextIOWrapper buffering vs select.select.
+            self._start_json_reader(session)
 
         return session
+
+    def _start_json_reader(self, session: Session) -> None:
+        """Start a thread that pumps stdout lines onto session.line_queue.
+
+        Sentinel: a single None pushed when the stream closes.
+        """
+        stdout = session.process.stdout
+        if stdout is None:
+            return
+
+        def reader() -> None:
+            try:
+                for line in stdout:
+                    session.line_queue.put(line)
+            except Exception:
+                logger.exception("JSON session reader thread failed")
+            finally:
+                session.line_queue.put(None)
+
+        t = threading.Thread(target=reader, daemon=True)
+        t.start()
+        session.reader_thread = t
 
     def _drain_startup(self, session: Session, timeout: float = 0.5) -> None:
         """Drain startup messages from REPL (marker protocol only)."""
@@ -215,14 +272,14 @@ class SessionManager:
                 error_message=error_msg,
             )
 
-        # Read JSON response (with timeout)
+        # Read streamed JSON events from the per-session reader queue.
         try:
-            # Use select for timeout
             start_time = time.time()
             timeout = self.execution_timeout
 
             while True:
-                if time.time() - start_time > timeout:
+                remaining = timeout - (time.time() - start_time)
+                if remaining <= 0:
                     return ExecutionResult(
                         stdout="",
                         stderr="",
@@ -230,18 +287,36 @@ class SessionManager:
                         error_message=f"Execution timed out after {timeout:g} seconds",
                     )
 
-                readable, _, _ = select.select([stdout], [], [], 0.1)
-                if readable:
-                    line = stdout.readline()
-                    if line:
-                        logger.debug(f"Received JSON response: {line[:100]}...")
-                        break
+                try:
+                    line = session.line_queue.get(timeout=min(remaining, 0.5))
+                except queue.Empty:
+                    # No event yet — check if the process died.
+                    if session.process.poll() is not None:
+                        stderr_output = ""
+                        if session.process.stderr:
+                            try:
+                                stderr_output = session.process.stderr.read()
+                            except Exception:
+                                pass
+                        error_msg = "Session process exited unexpectedly"
+                        if stderr_output:
+                            error_msg += f":\n{stderr_output}"
+                        return ExecutionResult(
+                            stdout="",
+                            stderr="",
+                            success=False,
+                            error_message=error_msg,
+                        )
+                    continue
 
-                if session.process.poll() is not None:
-                    # Capture stderr to show why the process died
+                if line is None:
+                    # Reader hit EOF — stream closed mid-request.
                     stderr_output = ""
                     if session.process.stderr:
-                        stderr_output = session.process.stderr.read()
+                        try:
+                            stderr_output = session.process.stderr.read()
+                        except Exception:
+                            pass
                     error_msg = "Session process exited unexpectedly"
                     if stderr_output:
                         error_msg += f":\n{stderr_output}"
@@ -252,22 +327,33 @@ class SessionManager:
                         error_message=error_msg,
                     )
 
-            response = json.loads(line)
-            err = response.get("err", "")
-            return ExecutionResult(
-                stdout=response.get("out", ""),
-                stderr="",  # Don't duplicate - use error_message for errors
-                success=response.get("ok", False),
-                error_message=err if not response.get("ok") and err else None,
-            )
+                logger.debug(f"Received JSON event: {line[:100]}...")
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError as e:
+                    return ExecutionResult(
+                        stdout="",
+                        stderr="",
+                        success=False,
+                        error_message=f"Invalid JSON response: {e}",
+                    )
 
-        except json.JSONDecodeError as e:
-            return ExecutionResult(
-                stdout="",
-                stderr="",
-                success=False,
-                error_message=f"Invalid JSON response: {e}",
-            )
+                etype = event.get("type")
+                if etype == "chunk":
+                    self._emit(event.get("data", ""))
+                    continue
+                if etype == "result" or etype is None:
+                    err = event.get("err", "")
+                    ok = event.get("ok", False)
+                    return ExecutionResult(
+                        stdout=event.get("out", ""),
+                        stderr="",  # Don't duplicate - use error_message for errors
+                        success=ok,
+                        error_message=err if not ok and err else None,
+                    )
+                # Unknown event type — ignore and keep reading.
+                continue
+
         except Exception as e:
             logger.exception("Error reading session response")
             return ExecutionResult(
@@ -341,13 +427,20 @@ class SessionManager:
         )
 
     def _read_until_marker(self, session: Session, timeout: float) -> str:
-        """Read stdout until the end marker appears (marker protocol)."""
+        """Read stdout until the end marker appears (marker protocol).
+
+        Each chunk is also streamed to stderr live (with the marker line stripped)
+        when streaming is enabled.
+        """
         output: list[str] = []
         start_time = time.time()
         stdout = session.process.stdout
 
         if stdout is None:
             return ""
+
+        emitted_up_to = 0  # index into the joined output already streamed to stderr
+        marker_seen = False
 
         while True:
             if time.time() - start_time > timeout:
@@ -362,7 +455,14 @@ class SessionManager:
                     logger.debug(f"Read chunk: {text!r}")
 
                     full_output = "".join(output)
-                    if END_MARKER in full_output:
+                    # Stream everything before the marker to stderr live.
+                    marker_idx = full_output.find(END_MARKER)
+                    safe_end = marker_idx if marker_idx >= 0 else len(full_output)
+                    if safe_end > emitted_up_to:
+                        self._emit(full_output[emitted_up_to:safe_end])
+                        emitted_up_to = safe_end
+                    if marker_idx >= 0:
+                        marker_seen = True
                         return full_output
 
             if session.process.poll() is not None:
@@ -371,7 +471,13 @@ class SessionManager:
                     output.append(remaining)
                 break
 
-        return "".join(output)
+        full_output = "".join(output)
+        if not marker_seen:
+            marker_idx = full_output.find(END_MARKER)
+            safe_end = marker_idx if marker_idx >= 0 else len(full_output)
+            if safe_end > emitted_up_to:
+                self._emit(full_output[emitted_up_to:safe_end])
+        return full_output
 
     def _clean_output(self, output: str, session: Session, code: str) -> str:
         """Clean REPL noise from output (marker protocol)."""
