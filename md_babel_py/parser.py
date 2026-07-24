@@ -215,7 +215,11 @@ def find_result_blocks(content: str) -> list[ResultBlock]:
     return blocks
 
 
-_IMAGE_LINE_RE = re.compile(r'^!\[[^\]]*\]\(([^)]+)\)[ \t]*$')
+_IMAGE_LINE_RE = re.compile(r'^!\[([^\]]*)\]\(([^)]+)\)[ \t]*$')
+
+# Alt text md-babel puts on every image result, which is how a generated image is
+# told apart from one the author wrote by hand.
+_GENERATED_IMAGE_ALT = 'output'
 
 
 def _is_result_opening(stripped: str) -> bool:
@@ -302,8 +306,14 @@ def find_block_result_range(content: str, block: CodeBlock) -> tuple[int, int] |
             else:
                 break
 
-        elif output_path and (m := _IMAGE_LINE_RE.match(line)) and m.group(1) == output_path:
-            # Bare image result (new format) — only when the path matches output=
+        elif (m := _IMAGE_LINE_RE.match(line)) and (
+            m.group(1) == _GENERATED_IMAGE_ALT
+            or (output_path and m.group(2) == output_path)
+        ):
+            # Bare image result (new format). Matched either by md-babel's own alt
+            # text -- so an image left behind by a block that has since dropped or
+            # renamed `output=` is replaced rather than orphaned -- or by a path
+            # still matching `output=`. Images the author wrote stay untouched.
             consumed_end = line_idx + 1  # 1-indexed, inclusive
             line_idx += 1
 

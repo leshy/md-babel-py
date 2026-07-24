@@ -180,6 +180,48 @@ print("session output")
         assert "session output" in result.stdout
         assert "hits" not in result.stderr
 
+    def test_dropping_output_param_replaces_the_image_result(self, tmp_path, temp_cache):
+        """A block that stops writing a file shows its printed output, not the old image.
+
+        The stale `![output](...)` must not survive, and the cached image-link
+        result must not be served for a block that no longer has `output=`.
+        """
+        import os
+        env = os.environ.copy()
+        env["XDG_CACHE_HOME"] = str(temp_cache.parent.parent)
+
+        def run_in_place() -> None:
+            # The shared helper forces --stdout; this bug is about the rewrite.
+            subprocess.run(
+                ["python", "-m", "md_babel_py.cli", "run", str(md_file)],
+                capture_output=True, text=True, env=env, check=False,
+            )
+
+        md_file = tmp_path / "test.md"
+        svg = tmp_path / "out.svg"
+        md_file.write_text(f'''```python output={svg.name}
+print("IGNORED WHILE WRITING A FILE")
+open(r"{svg}", "w").write("<svg/>")
+```
+''')
+
+        run_in_place()
+        assert f"![output]({svg.name})" in md_file.read_text()
+
+        # Same code, but no longer writing a file.
+        md_file.write_text(f'''```python
+print("PRINTED OUTPUT")
+```
+
+![output]({svg.name})
+''')
+
+        run_in_place()
+
+        after = md_file.read_text()
+        assert "PRINTED OUTPUT" in after.split("```results")[-1]
+        assert "![output]" not in after, f"stale image result survived:\n{after}"
+
     def test_cache_stores_output_files(self, tmp_path, temp_cache):
         """Cache should store and restore output files."""
         import os

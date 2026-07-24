@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from md_babel_py.cache import Cache, compute_cache_key, get_cache_dir
+from md_babel_py.cache import CACHE_VERSION, Cache, compute_cache_key, get_cache_dir
 from md_babel_py.config import EvaluatorConfig
 from md_babel_py.parser import CodeBlock
 from md_babel_py.types import ExecutionResult
@@ -16,7 +16,7 @@ from md_babel_py.types import ExecutionResult
 def temp_cache_dir(tmp_path, monkeypatch):
     """Use a temporary directory for the cache."""
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
-    return tmp_path / "md-babel" / "v1"
+    return tmp_path / "md-babel" / CACHE_VERSION
 
 
 @pytest.fixture
@@ -113,8 +113,8 @@ class TestComputeCacheKey:
         key2 = compute_cache_key(sample_block, eval2)
         assert key1 != key2
 
-    def test_output_param_ignored(self, sample_block, sample_evaluator):
-        """Output param should not affect cache key."""
+    def test_output_param_affects_key(self, sample_block, sample_evaluator):
+        """Adding output= changes the key: the result becomes an image link."""
         key1 = compute_cache_key(sample_block, sample_evaluator)
 
         block2 = CodeBlock(
@@ -131,7 +131,7 @@ class TestComputeCacheKey:
             params={"output": "foo.txt"},  # Has output param
         )
         key2 = compute_cache_key(block2, sample_evaluator)
-        assert key1 == key2
+        assert key1 != key2
 
     def test_other_params_affect_key(self, sample_block, sample_evaluator):
         """Non-output params should affect cache key."""
@@ -289,10 +289,10 @@ class TestGetCacheDir:
     def test_uses_xdg_cache_home(self, monkeypatch, tmp_path):
         """Should use XDG_CACHE_HOME if set."""
         monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
-        assert get_cache_dir() == tmp_path / "md-babel" / "v1"
+        assert get_cache_dir() == tmp_path / "md-babel" / CACHE_VERSION
 
     def test_defaults_to_home_cache(self, monkeypatch):
         """Should default to ~/.cache if XDG_CACHE_HOME not set."""
         monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
         cache_dir = get_cache_dir()
-        assert cache_dir == Path.home() / ".cache" / "md-babel" / "v1"
+        assert cache_dir == Path.home() / ".cache" / "md-babel" / CACHE_VERSION

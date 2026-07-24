@@ -13,7 +13,10 @@ from .types import ExecutionResult
 
 logger = logging.getLogger(__name__)
 
-CACHE_VERSION = "v1"
+# v2: `output` joined the cache key. A v1 entry for a block *with* `output=` has
+# the same key as a v2 entry for a block without it, but holds an `![output](...)`
+# result, so v1 entries must not be reachable.
+CACHE_VERSION = "v2"
 
 
 def get_cache_dir() -> Path:
@@ -45,13 +48,15 @@ def compute_cache_key(block: CodeBlock, evaluator: EvaluatorConfig) -> str:
     - Code content
     - Language
     - Evaluator configuration (path, args, prefix, suffix)
-    - Block params (excluding 'output' which is just destination)
+    - Block params, `output` included: a block that writes to a file reports its
+      result as `![output](path)`, so adding, changing or removing `output`
+      changes what lands in the document and must invalidate the entry.
     """
     key_data = {
         "code": block.code,
         "lang": block.language,
         "eval": _evaluator_fingerprint(evaluator),
-        "params": {k: v for k, v in block.params.items() if k != "output"},
+        "params": dict(block.params),
     }
     key_json = json.dumps(key_data, sort_keys=True)
     return hashlib.sha256(key_json.encode()).hexdigest()[:16]
@@ -80,7 +85,7 @@ def compute_session_key(
         "lang": block.language,
         "session": block.session,
         "eval": _evaluator_fingerprint(evaluator),
-        "params": {k: v for k, v in block.params.items() if k != "output"},
+        "params": dict(block.params),
     }
     key_json = json.dumps(key_data, sort_keys=True)
     return hashlib.sha256(key_json.encode()).hexdigest()[:16]
