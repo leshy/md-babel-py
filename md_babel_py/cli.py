@@ -12,6 +12,7 @@ from .executor import Executor
 from .parser import find_code_blocks, CodeBlock
 from .types import ExecutionResult
 from .writer import apply_results, BlockResult
+from . import watch as watch_mod
 
 logger = logging.getLogger(__name__)
 
@@ -45,10 +46,26 @@ def main() -> int:
     run_parser.add_argument("--stdout", action="store_true", help="Print result to stdout instead of writing file")
     run_parser.add_argument("--config", "-c", type=Path, help="Config file path")
     run_parser.add_argument("--lang", help="Only execute these languages (comma-separated)")
+    run_parser.add_argument(
+        "-k",
+        dest="select",
+        metavar="TEXT",
+        help="Only run blocks whose code, language, session or params contain TEXT "
+             "(case-insensitive). Note that a session block selected without the "
+             "blocks before it will not have their state.",
+    )
     run_parser.add_argument("--dry-run", action="store_true", help="Show what would be executed")
     run_parser.add_argument("--no-cache", action="store_true", help="Disable caching, always re-execute blocks")
     run_parser.add_argument("--quiet", "-q", action="store_true", help="Suppress live streaming of code-block stdout/stderr")
     run_parser.add_argument("--recursive", "-r", action="store_true", help="Process all .md files in directory recursively")
+    run_parser.add_argument("--watch", "-w", action="store_true", help="Keep running, re-processing files when they change (Ctrl-C to stop)")
+    run_parser.add_argument(
+        "--watch-interval",
+        type=_positive_float,
+        default=watch_mod.DEFAULT_INTERVAL,
+        metavar="SEC",
+        help=f"Seconds between --watch polls (default: {watch_mod.DEFAULT_INTERVAL:g})",
+    )
     run_parser.add_argument(
         "--execution-timeout",
         type=_positive_float,
@@ -128,6 +145,33 @@ def format_block_flags(block: CodeBlock) -> str:
     if block.no_result:
         flags.append("no-result")
     return f" [{', '.join(flags)}]" if flags else ""
+
+
+def block_matches(block: CodeBlock, needle: str) -> bool:
+    """Whether a block's searchable text contains `needle`, case-insensitively.
+
+    Searches the code itself plus the things worth selecting on: language,
+    session name, and params (as `key=value`, so `-k output=plot.svg` works).
+    """
+    parts = [block.language, block.code]
+    if block.session:
+        # Both spellings: bare `-k plot` and the way it is written in the fence.
+        parts += [block.session, f"session={block.session}"]
+    parts += [f"{k}={v}" for k, v in sorted(block.params.items())]
+    return needle.casefold() in " ".join(parts).casefold()
+
+
+def format_summary(success: int, total: int, cached: int) -> str:
+    """Render the per-run tally, noting how much of it came from cache."""
+    detail = ""
+    cached = min(cached, total)
+    if cached:
+        executed = total - cached
+        inner = f"{cached} from cache"
+        if executed:
+            inner += f", {executed} executed"
+        detail = f" ({inner})"
+    return f"{success}/{total} blocks executed successfully{detail}."
 
 
 def filter_blocks(
@@ -308,7 +352,7 @@ def run_single_file(
     config: Config,
     args: argparse.Namespace,
     execution_timeout: float,
-) -> tuple[int, int, list[str]]:
+) -> tuple[int, int, list[str], int]:
     """Process a single markdown file.
 
     Args:
@@ -318,15 +362,21 @@ def run_single_file(
         execution_timeout: Per-block timeout in seconds (isolated and session).
 
     Returns:
-        Tuple of (blocks_executed, blocks_total, test_failures).
+        Tuple of (blocks_executed, blocks_total, test_failures, blocks_from_cache).
     """
     content = file_path.read_text()
 
     # Parse code blocks
     blocks = find_code_blocks(content)
 
+    select = getattr(args, "select", None)
+    if select:
+        blocks = [b for b in blocks if block_matches(b, select)]
+        if not blocks:
+            logger.info(f"No blocks match -k {select!r}")
+
     if not blocks:
-        return 0, 0, []
+        return 0, 0, [], 0
 
     # Parse language filter
     lang_filter = set(args.lang.split(",")) if args.lang else None
@@ -338,7 +388,7 @@ def run_single_file(
         logger.warning(f"Warning: No evaluators configured for: {', '.join(sorted(unconfigured))}")
 
     if not configured_blocks:
-        return 0, 0, []
+        return 0, 0, [], 0
 
     # Filter out skipped blocks
     executable_blocks = [b for b in configured_blocks if not b.skip]
@@ -354,7 +404,7 @@ def run_single_file(
             logger.info("")
         if skipped_count:
             logger.info(f"({skipped_count} block(s) marked as skip)")
-        return len(executable_blocks), len(executable_blocks), []
+        return len(executable_blocks), len(executable_blocks), [], 0
 
     # Execute blocks
     cache_enabled = not getattr(args, "no_cache", False)
@@ -366,6 +416,7 @@ def run_single_file(
         stream=not getattr(args, "quiet", False),
     )
     try:
+        executor.plan(executable_blocks)
         results, test_failures, _ = execute_blocks(executor, executable_blocks)
     finally:
         executor.cleanup()
@@ -386,7 +437,57 @@ def run_single_file(
         output_path.write_text(new_content)
 
     success_count = sum(1 for r in results if r.result.success)
-    return success_count, len(results), test_failures
+    return success_count, len(results), test_failures, stats["hits"]
+
+
+def run_watch(
+    args: argparse.Namespace,
+    config: Config,
+    execution_timeout: float,
+) -> int:
+    """Process files, then keep processing them as they change, until interrupted.
+
+    Args:
+        args: Command-line arguments.
+        config: Loaded configuration.
+        execution_timeout: Per-block timeout in seconds.
+
+    Returns:
+        Exit code (0 on clean interrupt).
+    """
+    use_color = sys.stderr.isatty()
+
+    def collect() -> list[Path]:
+        # Re-collected every poll so files added under a watched directory count.
+        return collect_markdown_files(args.file, args.recursive)
+
+    def process(file_path: Path) -> None:
+        name = f"\x1b[32m{file_path}\x1b[0m" if use_color else str(file_path)
+        logger.info(f"\n{name}")
+        try:
+            success, total, failures, cached = run_single_file(
+                file_path, config, args, execution_timeout
+            )
+        except MdBabelError as e:
+            # A bad block must not take the watcher down with it.
+            logger.error(f"Error: {e}")
+            return
+        if failures:
+            logger.error(f"{len(failures)} test failure(s):")
+            for f in failures:
+                logger.error(f"  - {f}")
+        elif total:
+            logger.info(f"Done: {format_summary(success, total, cached)}")
+
+    target = args.file
+    scope = "recursively" if args.recursive and target.is_dir() else ""
+    logger.info(f"Watching {target} {scope}(Ctrl-C to stop)".replace("  ", " "))
+
+    try:
+        watch_mod.watch(collect, process, interval=args.watch_interval)
+    except KeyboardInterrupt:
+        logger.info("\nStopped watching.")
+    return 0
 
 
 def cmd_run(args: argparse.Namespace) -> int:
@@ -409,6 +510,9 @@ def cmd_run(args: argparse.Namespace) -> int:
     # Collect files to process
     files = collect_markdown_files(args.file, args.recursive)
 
+    if getattr(args, "watch", False):
+        return run_watch(args, config, resolve_execution_timeout(args))
+
     if not files:
         if args.file.is_dir():
             logger.info(f"No markdown files found in {args.file}")
@@ -430,6 +534,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     # Process files
     total_success = 0
     total_blocks = 0
+    total_cached = 0
     all_failures: list[str] = []
 
     use_color = sys.stderr.isatty()
@@ -440,18 +545,20 @@ def cmd_run(args: argparse.Namespace) -> int:
             else:
                 logger.info(f"\n{file_path}")
 
-        success, total, failures = run_single_file(
+        success, total, failures, cached = run_single_file(
             file_path, config, args, execution_timeout
         )
         total_success += success
         total_blocks += total
+        total_cached += cached
         all_failures.extend([f"{file_path}: {f}" for f in failures])
 
     # Summary for multi-file mode
+    summary = format_summary(total_success, total_blocks, total_cached)
     if len(files) > 1:
-        logger.info(f"\nTotal: {len(files)} files, {total_success}/{total_blocks} blocks executed successfully.")
+        logger.info(f"\nTotal: {len(files)} files, {summary}")
     elif total_blocks > 0:
-        logger.info(f"\nDone: {total_success}/{total_blocks} blocks executed successfully.")
+        logger.info(f"\nDone: {summary}")
 
     if not args.stdout and args.output and len(files) == 1:
         logger.info(f"Output written to: {args.output}")

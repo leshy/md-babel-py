@@ -259,6 +259,12 @@ md-babel-py run document.md --stdout
 # Only run specific languages
 md-babel-py run document.md --lang python,sh
 
+# Only run blocks matching some text (like pytest's -k)
+md-babel-py run document.md -k "session=plot"
+
+# Re-run automatically whenever the file changes
+md-babel-py run document.md --watch
+
 # Dry run - show what would execute
 md-babel-py run document.md --dry-run
 
@@ -267,6 +273,45 @@ md-babel-py run document.md --execution-timeout 120
 ```
 
 Isolated evaluators (non-session blocks) run each snippet in a subprocess and stop it after this many seconds. Session-based blocks use separate timeouts inside the session.
+
+### Selecting blocks with `-k`
+
+`-k TEXT` runs only the blocks whose text contains `TEXT`, case-insensitively.
+It searches the code, the language, the session name (as `plot` or
+`session=plot`), and params (as `output=diagram.svg`).
+
+Selection applies to execution, so a session block picked out on its own will
+not have the state its earlier blocks would have built.
+
+### Watching
+
+`--watch` runs the file (or directory, with `--recursive`) and then keeps
+running it whenever it changes, until interrupted:
+
+```sh skip
+md-babel-py run docs/ --recursive --watch
+md-babel-py run document.md --watch --watch-interval 0.5   # default is 1s
+```
+
+Changes are detected by hashing file contents, not by mtime or inode, so a
+save-via-rename from an editor, a `cp -p`, and a `git checkout` all register.
+md-babel's own rewrite of the file it just ran does not count as a change, so
+watching does not loop. A file that is still being written is left alone until
+its contents stop changing.
+
+## Caching
+
+Block results are cached by default (in `$XDG_CACHE_HOME/md-babel`); pass
+`--no-cache` to re-execute everything.
+
+An isolated block is keyed by its own code and evaluator config. A **session
+block is keyed by the chain of blocks before it in that session**, so a session
+whose blocks are all unchanged is served entirely from cache without ever
+starting the interpreter. Editing a block invalidates that block and every block
+after it in the same session; other sessions in the file are unaffected.
+
+Because a block that misses needs the REPL state its predecessors built, any
+session containing a miss is re-executed in full.
 
 ## Code Block Syntax
 

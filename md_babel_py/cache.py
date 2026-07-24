@@ -26,8 +26,20 @@ def get_cache_dir() -> Path:
     return base / "md-babel" / CACHE_VERSION
 
 
+def _evaluator_fingerprint(evaluator: EvaluatorConfig) -> dict[str, object]:
+    """The parts of an evaluator config that change what a block produces."""
+    return {
+        "path": evaluator.path,
+        "args": evaluator.default_arguments,
+        "prefix": evaluator.prefix,
+        "suffix": evaluator.suffix,
+        "input_extension": evaluator.input_extension,
+        "default_params": evaluator.default_params,
+    }
+
+
 def compute_cache_key(block: CodeBlock, evaluator: EvaluatorConfig) -> str:
-    """Compute a cache key for a code block execution.
+    """Compute a cache key for an isolated code block execution.
 
     The key is a hash of:
     - Code content
@@ -38,14 +50,36 @@ def compute_cache_key(block: CodeBlock, evaluator: EvaluatorConfig) -> str:
     key_data = {
         "code": block.code,
         "lang": block.language,
-        "eval": {
-            "path": evaluator.path,
-            "args": evaluator.default_arguments,
-            "prefix": evaluator.prefix,
-            "suffix": evaluator.suffix,
-            "input_extension": evaluator.input_extension,
-            "default_params": evaluator.default_params,
-        },
+        "eval": _evaluator_fingerprint(evaluator),
+        "params": {k: v for k, v in block.params.items() if k != "output"},
+    }
+    key_json = json.dumps(key_data, sort_keys=True)
+    return hashlib.sha256(key_json.encode()).hexdigest()[:16]
+
+
+def compute_session_key(
+    previous: str,
+    block: CodeBlock,
+    evaluator: EvaluatorConfig,
+) -> str:
+    """Compute a cache key for a session block, chained to its predecessors.
+
+    A session block's output depends on the REPL state built by every block that
+    ran before it in the session, so the key folds in `previous`: the key of the
+    preceding block in the same session ("" for the first). Editing a block
+    therefore invalidates that block and every block after it, and nothing else.
+
+    Args:
+        previous: Session key of the preceding block in this session.
+        block: The block being keyed.
+        evaluator: The evaluator that will run it.
+    """
+    key_data = {
+        "previous": previous,
+        "code": block.code,
+        "lang": block.language,
+        "session": block.session,
+        "eval": _evaluator_fingerprint(evaluator),
         "params": {k: v for k, v in block.params.items() if k != "output"},
     }
     key_json = json.dumps(key_data, sort_keys=True)
@@ -82,6 +116,26 @@ class Cache:
     def _output_path(self, key: str) -> Path:
         """Get the path to the output file for a cache key."""
         return self.cache_dir / f"{key}.out"
+
+    def has(self, key: str) -> bool:
+        """Whether a result is cached, without counting a hit or a miss.
+
+        Used to decide up front whether a whole session can be replayed from
+        cache, which must not disturb the stats reported for the actual run.
+        """
+        if not self.enabled:
+            return False
+        return self._meta_path(key).exists()
+
+    def note_miss(self) -> None:
+        """Record a miss for a block that had to run without the cache being consulted.
+
+        A block in a session that is being re-executed cannot be served from
+        cache even if its key is present, because skipping it would leave the
+        REPL without the state the following blocks need. It is still a miss.
+        """
+        if self.enabled:
+            self._misses += 1
 
     def get(self, key: str, output_file: str | None = None) -> ExecutionResult | None:
         """Get a cached result.

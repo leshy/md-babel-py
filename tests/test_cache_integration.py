@@ -105,9 +105,8 @@ print("version 2")
         assert "version 2" in result3.stdout
         assert "0 hits, 1 misses" in result3.stderr
 
-    def test_session_blocks_not_cached(self, tmp_path, temp_cache):
-        """Session blocks should not be cached."""
-        import os
+    def test_unchanged_session_is_served_from_cache(self, tmp_path, temp_cache):
+        """An unchanged session replays from cache instead of re-executing."""
         env = {"XDG_CACHE_HOME": str(temp_cache.parent.parent)}
 
         md_file = tmp_path / "test.md"
@@ -115,18 +114,71 @@ print("version 2")
 x = 42
 print(x)
 ```
+
+```python session=main
+print(x + 1)
+```
 ''')
 
-        # First run
         result1 = run_md_babel(md_file, env=env)
         assert result1.returncode == 0
         assert "42" in result1.stdout
+        assert "43" in result1.stdout
+        assert "0 hits, 2 misses" in result1.stderr
 
-        # Second run - should NOT hit cache (sessions aren't cached)
         result2 = run_md_babel(md_file, env=env)
         assert result2.returncode == 0
-        # No cache stats because session blocks bypass cache entirely
-        assert "hits" not in result2.stderr or "0 hits" in result2.stderr
+        assert "42" in result2.stdout
+        assert "43" in result2.stdout
+        assert "2 hits, 0 misses" in result2.stderr
+
+    def test_editing_a_session_block_invalidates_it(self, tmp_path, temp_cache):
+        """Editing a session block re-runs the session; results stay correct."""
+        env = {"XDG_CACHE_HOME": str(temp_cache.parent.parent)}
+
+        md_file = tmp_path / "test.md"
+        md_file.write_text('''```python session=main
+x = 42
+```
+
+```python session=main
+print(x)
+```
+''')
+
+        assert "42" in run_md_babel(md_file, env=env).stdout
+
+        # Change the first block: the second depends on it and must not be
+        # served the stale "42" from the previous run.
+        md_file.write_text('''```python session=main
+x = 99
+```
+
+```python session=main
+print(x)
+```
+''')
+
+        result = run_md_babel(md_file, env=env)
+        assert result.returncode == 0
+        assert "99" in result.stdout
+        assert "42" not in result.stdout
+
+    def test_no_cache_flag_reruns_session(self, tmp_path, temp_cache):
+        """--no-cache forces session execution even when everything is cached."""
+        env = {"XDG_CACHE_HOME": str(temp_cache.parent.parent)}
+
+        md_file = tmp_path / "test.md"
+        md_file.write_text('''```python session=main
+print("session output")
+```
+''')
+
+        run_md_babel(md_file, env=env)
+        result = run_md_babel(md_file, extra_args=["--no-cache"], env=env)
+        assert result.returncode == 0
+        assert "session output" in result.stdout
+        assert "hits" not in result.stderr
 
     def test_cache_stores_output_files(self, tmp_path, temp_cache):
         """Cache should store and restore output files."""

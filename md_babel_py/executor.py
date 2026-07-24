@@ -9,7 +9,7 @@ import threading
 from pathlib import Path
 from typing import IO
 
-from .cache import Cache, compute_cache_key
+from .cache import Cache, compute_cache_key, compute_session_key
 from .config import Config, EvaluatorConfig, get_evaluator
 from .parser import CodeBlock
 from .session import SessionManager
@@ -76,6 +76,40 @@ class Executor:
         self.source_dir = source_file.parent.resolve() if source_file else Path.cwd()
         # Max seconds per code block for both isolated subprocess runs and session reads.
         self.execution_timeout = execution_timeout
+        # Filled in by plan(): session cache keys by block start line, and the
+        # sessions whose every block is cached (so the REPL is never started).
+        self._session_keys: dict[int, str] = {}
+        self._replayable_sessions: set[str] = set()
+
+    def plan(self, blocks: list[CodeBlock]) -> None:
+        """Key the session blocks and decide which sessions can skip execution.
+
+        A session block is cached against the chain of blocks before it, so an
+        unchanged session hits all the way through. A session with any miss must
+        be executed in full: the REPL state a missing block needs only exists if
+        its predecessors actually ran, cached result or not.
+
+        Args:
+            blocks: The blocks about to be executed, in execution order.
+        """
+        self._session_keys = {}
+        self._replayable_sessions = set()
+
+        chain: dict[str, str] = {}
+        keys_by_session: dict[str, list[str]] = {}
+
+        for block in blocks:
+            evaluator = get_evaluator(self.config, block.language)
+            if not block.session or evaluator is None or not evaluator.session:
+                continue
+            key = compute_session_key(chain.get(block.session, ""), block, evaluator)
+            chain[block.session] = key
+            self._session_keys[block.start_line] = key
+            keys_by_session.setdefault(block.session, []).append(key)
+
+        for session, keys in keys_by_session.items():
+            if all(self.cache.has(key) for key in keys):
+                self._replayable_sessions.add(session)
 
     def _resolve_output_path(self, output_param: str) -> tuple[Path, str]:
         """Resolve output path relative to source file directory.
@@ -103,10 +137,37 @@ class Executor:
             )
 
         if block.session and evaluator.session:
-            # Session blocks are not cached (they depend on previous state)
-            return self._execute_session(block, evaluator)
+            return self._execute_session_cached(block, evaluator)
         else:
             return self._execute_isolated_cached(block, evaluator)
+
+    def _execute_session_cached(
+        self, block: CodeBlock, evaluator: EvaluatorConfig
+    ) -> ExecutionResult:
+        """Execute a session block, serving it from cache if the session is unchanged."""
+        cache_key = self._session_keys.get(block.start_line)
+        if cache_key is None:
+            # No plan() was run, so the block's place in the session is unknown.
+            return self._execute_session(block, evaluator)
+
+        output_param = block.params.get("output")
+        output_file = str(self._resolve_output_path(output_param)[0]) if output_param else None
+
+        if block.session in self._replayable_sessions:
+            cached = self.cache.get(cache_key, output_file=output_file)
+            if cached is not None:
+                logger.debug(f"Cache hit for session block at line {block.start_line}")
+                self._echo_cached(cached)
+                return cached
+        else:
+            # get() was never called, so record the miss it would have counted.
+            self.cache.note_miss()
+
+        result = self._execute_session(block, evaluator)
+        if result.success:
+            self.cache.put(cache_key, result, output_file=output_file)
+
+        return result
 
     def _execute_isolated_cached(
         self, block: CodeBlock, evaluator: EvaluatorConfig
