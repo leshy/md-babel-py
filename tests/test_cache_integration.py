@@ -180,11 +180,12 @@ print("session output")
         assert "session output" in result.stdout
         assert "hits" not in result.stderr
 
-    def test_dropping_output_param_replaces_the_image_result(self, tmp_path, temp_cache):
-        """A block that stops writing a file shows its printed output, not the old image.
+    def test_dropping_output_param_shows_the_printed_result(self, tmp_path, temp_cache):
+        """A block that stops writing a file shows its printed output.
 
-        The stale `![output](...)` must not survive, and the cached image-link
-        result must not be served for a block that no longer has `output=`.
+        The cached image-link result must not be served for a block that no longer
+        has `output=`. The image line itself stays: removing links is the author's
+        call, never md-babel's.
         """
         import os
         env = os.environ.copy()
@@ -220,7 +221,40 @@ print("PRINTED OUTPUT")
 
         after = md_file.read_text()
         assert "PRINTED OUTPUT" in after.split("```results")[-1]
-        assert "![output]" not in after, f"stale image result survived:\n{after}"
+        assert f"![output]({svg.name})" in after, f"image link was removed:\n{after}"
+
+    def test_output_none_never_touches_image_links(self, tmp_path, temp_cache):
+        """output=none: replace the generated result block, never the author's links."""
+        import os
+        env = os.environ.copy()
+        env["XDG_CACHE_HOME"] = str(temp_cache.parent.parent)
+
+        md_file = tmp_path / "test.md"
+        links = (
+            "![output](assets/one.svg)\n"
+            "\n"
+            "![output](assets/two.png)\n"
+        )
+        md_file.write_text(
+            '```python output=none\nprint("FIRST")\n```\n\n'
+            "```results\nFIRST\n```\n\n" + links
+        )
+
+        # Change the printed value: the result block must update, links must not move.
+        md_file.write_text(
+            '```python output=none\nprint("SECOND")\n```\n\n'
+            "```results\nFIRST\n```\n\n" + links
+        )
+        subprocess.run(
+            ["python", "-m", "md_babel_py.cli", "run", str(md_file)],
+            capture_output=True, text=True, env=env, check=False,
+        )
+
+        after = md_file.read_text()
+        assert "SECOND" in after.split("```results")[1]
+        assert "FIRST" not in after, "stale result block was not replaced"
+        assert after.count("![output](assets/one.svg)") == 1
+        assert after.count("![output](assets/two.png)") == 1
 
     def test_cache_stores_output_files(self, tmp_path, temp_cache):
         """Cache should store and restore output files."""

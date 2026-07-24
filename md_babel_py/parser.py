@@ -217,9 +217,9 @@ def find_result_blocks(content: str) -> list[ResultBlock]:
 
 _IMAGE_LINE_RE = re.compile(r'^!\[([^\]]*)\]\(([^)]+)\)[ \t]*$')
 
-# Alt text md-babel puts on every image result, which is how a generated image is
-# told apart from one the author wrote by hand.
-_GENERATED_IMAGE_ALT = 'output'
+# `output=none` means "md-babel does not manage an output file here", so images
+# under such a block are the author's and are never touched.
+_NO_OUTPUT = 'none'
 
 
 def _is_result_opening(stripped: str) -> bool:
@@ -306,14 +306,17 @@ def find_block_result_range(content: str, block: CodeBlock) -> tuple[int, int] |
             else:
                 break
 
-        elif (m := _IMAGE_LINE_RE.match(line)) and (
-            m.group(1) == _GENERATED_IMAGE_ALT
-            or (output_path and m.group(2) == output_path)
+        elif (
+            output_path
+            and output_path != _NO_OUTPUT
+            and (m := _IMAGE_LINE_RE.match(line))
+            and m.group(2) == output_path
         ):
-            # Bare image result (new format). Matched either by md-babel's own alt
-            # text -- so an image left behind by a block that has since dropped or
-            # renamed `output=` is replaced rather than orphaned -- or by a path
-            # still matching `output=`. Images the author wrote stay untouched.
+            # Bare image result (new format), and only the one md-babel is about to
+            # rewrite: its path still matches this block's `output=`. Any other
+            # image is the author's -- hand-written links, and everything under an
+            # `output=none` block -- and is never removed, even when the block's
+            # own result block above it is replaced.
             consumed_end = line_idx + 1  # 1-indexed, inclusive
             line_idx += 1
 
