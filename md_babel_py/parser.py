@@ -362,3 +362,38 @@ def extract_result_content(content: str, block: CodeBlock) -> str | None:
 
     result_lines = lines[start_idx:end_idx]
     return '\n'.join(result_lines)
+
+
+def block_identity(block: CodeBlock) -> tuple[str, str]:
+    """What makes a block the same block across a re-read: its fence and its code."""
+    return (block.info_string, block.code)
+
+
+def locate_block(
+    content: str,
+    identity: tuple[str, str],
+    ordinal: int = 0,
+) -> CodeBlock | None:
+    """Find a block again in content that may have moved or been edited.
+
+    Line numbers shift as results are inserted above a block and as the author
+    edits the document, so a block is re-found by identity rather than position.
+
+    Args:
+        content: The current document text.
+        identity: The block's `block_identity()`.
+        ordinal: Which one to take when several blocks are byte-identical.
+
+    Returns:
+        The matching block with current line numbers, or None if the block is no
+        longer there -- meaning it was edited or removed, and any result computed
+        for it is stale and must not be written.
+    """
+    matches = [b for b in find_code_blocks(content) if block_identity(b) == identity]
+    if not matches:
+        return None
+    if ordinal < len(matches):
+        return matches[ordinal]
+    # Fewer copies than before, but the survivors are byte-identical to the one
+    # that ran, so its result belongs to any of them.
+    return matches[-1]

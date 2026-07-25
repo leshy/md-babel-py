@@ -41,7 +41,7 @@ def snapshot(files: Iterable[Path]) -> dict[Path, str]:
 
 def watch(
     collect: Callable[[], list[Path]],
-    process: Callable[[Path], None],
+    process: Callable[[Path], bool | None],
     interval: float = DEFAULT_INTERVAL,
     run_initially: bool = True,
 ) -> None:
@@ -54,7 +54,10 @@ def watch(
     Args:
         collect: Returns the current set of files to watch, called every poll so
             files created or deleted under a watched directory are picked up.
-        process: Called with each file whose contents changed.
+        process: Called with each file whose contents changed. Returning False
+            means the file was edited while it was being processed, so its new
+            state must not be recorded as processed -- the next poll picks the
+            edit up. None and True both mean the file is settled.
         interval: Seconds between polls.
         run_initially: Process every file once at startup before watching.
     """
@@ -89,7 +92,11 @@ def watch(
                     settling[path] = digest  # wait for it to stop moving
 
         for path in changed:
-            process(path)
+            settled = process(path)
+            if settled is False:
+                # Leave the file unrecorded so the next poll sees it as changed.
+                processed.pop(path, None)
+                continue
             # Re-hash after processing: this is the write we must not react to.
             written = hash_file(path)
             if written is not None:

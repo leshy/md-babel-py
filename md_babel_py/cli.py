@@ -4,12 +4,13 @@ import argparse
 import json
 import logging
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from .config import load_config, get_evaluator, Config, EvaluatorConfig
 from .exceptions import ConfigError, MdBabelError
 from .executor import Executor
-from .parser import find_code_blocks, CodeBlock
+from .parser import find_code_blocks, block_identity, locate_block, CodeBlock
 from .types import ExecutionResult
 from .writer import apply_results, BlockResult
 from . import watch as watch_mod
@@ -209,12 +210,15 @@ def filter_blocks(
 def execute_blocks(
     executor: Executor,
     blocks: list[CodeBlock],
+    on_result: Callable[[BlockResult], None] | None = None,
 ) -> tuple[list[BlockResult], list[str], bool]:
     """Execute code blocks and collect results.
 
     Args:
         executor: The executor instance.
         blocks: The blocks to execute.
+        on_result: Called with each result as soon as its block finishes, so
+            results can be written to the document while the run continues.
 
     Returns:
         Tuple of (results, test_failures, stopped_early).
@@ -235,7 +239,10 @@ def execute_blocks(
 
         # Only add to results if we want to write output (not no-result)
         if not block.no_result:
-            results.append(BlockResult(block=block, result=result))
+            block_result = BlockResult(block=block, result=result)
+            results.append(block_result)
+            if on_result is not None:
+                on_result(block_result)
 
         # Check expected-error logic
         if block.expected_error:
@@ -352,7 +359,7 @@ def run_single_file(
     config: Config,
     args: argparse.Namespace,
     execution_timeout: float,
-) -> tuple[int, int, list[str], int]:
+) -> tuple[int, int, list[str], int, bool]:
     """Process a single markdown file.
 
     Args:
@@ -362,12 +369,18 @@ def run_single_file(
         execution_timeout: Per-block timeout in seconds (isolated and session).
 
     Returns:
-        Tuple of (blocks_executed, blocks_total, test_failures, blocks_from_cache).
+        Tuple of (blocks_executed, blocks_total, test_failures, blocks_from_cache,
+        edited_during_run). The last is True when the document's blocks changed
+        while it ran, meaning the file needs processing again.
     """
     content = file_path.read_text()
 
     # Parse code blocks
     blocks = find_code_blocks(content)
+
+    # Identities of every block as the run starts, to tell afterwards whether the
+    # author edited the document while it was running.
+    identities_at_start = [block_identity(b) for b in blocks]
 
     select = getattr(args, "select", None)
     if select:
@@ -376,7 +389,7 @@ def run_single_file(
             logger.info(f"No blocks match -k {select!r}")
 
     if not blocks:
-        return 0, 0, [], 0
+        return 0, 0, [], 0, False
 
     # Parse language filter
     lang_filter = set(args.lang.split(",")) if args.lang else None
@@ -388,7 +401,7 @@ def run_single_file(
         logger.warning(f"Warning: No evaluators configured for: {', '.join(sorted(unconfigured))}")
 
     if not configured_blocks:
-        return 0, 0, [], 0
+        return 0, 0, [], 0, False
 
     # Filter out skipped blocks
     executable_blocks = [b for b in configured_blocks if not b.skip]
@@ -404,7 +417,34 @@ def run_single_file(
             logger.info("")
         if skipped_count:
             logger.info(f"({skipped_count} block(s) marked as skip)")
-        return len(executable_blocks), len(executable_blocks), [], 0
+        return len(executable_blocks), len(executable_blocks), [], 0, False
+
+    # Editing the source file in place is the only mode where results can be
+    # written as they arrive; --stdout and --output produce one document at the end.
+    write_incrementally = not args.stdout and not args.output
+
+    # Ordinal of each block among byte-identical ones, so a result can be matched
+    # back to its own block after the document has moved underneath it.
+    ordinals: dict[int, int] = {}
+    counts: dict[tuple[str, str], int] = {}
+    for block in blocks:
+        identity = block_identity(block)
+        ordinals[block.start_line] = counts.get(identity, 0)
+        counts[identity] = ordinals[block.start_line] + 1
+
+    def flush(block_result: BlockResult) -> None:
+        """Add one block's result to the document as it stands right now."""
+        current = file_path.read_text()
+        identity = block_identity(block_result.block)
+        fresh = locate_block(current, identity, ordinals.get(block_result.block.start_line, 0))
+        if fresh is None:
+            # The block was edited or removed while it ran: its result is stale,
+            # and writing it would undo what the author just typed.
+            logger.debug(f"Block at line {block_result.block.start_line} changed; dropping its result")
+            return
+        updated = apply_results(current, [BlockResult(block=fresh, result=block_result.result)])
+        if updated != current:
+            file_path.write_text(updated)
 
     # Execute blocks
     cache_enabled = not getattr(args, "no_cache", False)
@@ -417,7 +457,9 @@ def run_single_file(
     )
     try:
         executor.plan(executable_blocks)
-        results, test_failures, _ = execute_blocks(executor, executable_blocks)
+        results, test_failures, _ = execute_blocks(
+            executor, executable_blocks, on_result=flush if write_incrementally else None
+        )
     finally:
         executor.cleanup()
 
@@ -426,18 +468,24 @@ def run_single_file(
     if stats["hits"] > 0 or stats["misses"] > 0:
         logger.info(f"Cache: {stats['hits']} hits, {stats['misses']} misses")
 
-    # Apply results to content
-    new_content = apply_results(content, results)
-
-    # Write output
-    if args.stdout:
-        print(new_content)
+    if write_incrementally:
+        # Results are already in the file, each applied to the document as it was
+        # at the time. Re-applying them to the text read before the run would
+        # discard any edit made while it was running.
+        edited_during_run = [
+            block_identity(b) for b in find_code_blocks(file_path.read_text())
+        ] != identities_at_start
     else:
-        output_path = args.output or file_path
-        output_path.write_text(new_content)
+        new_content = apply_results(content, results)
+        if args.stdout:
+            print(new_content)
+        else:
+            output_path = args.output or file_path
+            output_path.write_text(new_content)
+        edited_during_run = False
 
     success_count = sum(1 for r in results if r.result.success)
-    return success_count, len(results), test_failures, stats["hits"]
+    return success_count, len(results), test_failures, stats["hits"], edited_during_run
 
 
 def run_watch(
@@ -461,23 +509,28 @@ def run_watch(
         # Re-collected every poll so files added under a watched directory count.
         return collect_markdown_files(args.file, args.recursive)
 
-    def process(file_path: Path) -> None:
+    def process(file_path: Path) -> bool:
         name = f"\x1b[32m{file_path}\x1b[0m" if use_color else str(file_path)
         logger.info(f"\n{name}")
         try:
-            success, total, failures, cached = run_single_file(
+            success, total, failures, cached, edited_during_run = run_single_file(
                 file_path, config, args, execution_timeout
             )
         except MdBabelError as e:
             # A bad block must not take the watcher down with it.
             logger.error(f"Error: {e}")
-            return
+            return True
         if failures:
             logger.error(f"{len(failures)} test failure(s):")
             for f in failures:
                 logger.error(f"  - {f}")
         elif total:
             logger.info(f"Done: {format_summary(success, total, cached)}")
+        if edited_during_run:
+            logger.info("File changed while running; processing it again.")
+        # False leaves the file looking unprocessed, so the next poll picks up the
+        # edit that landed mid-run instead of absorbing it.
+        return not edited_during_run
 
     target = args.file
     scope = "recursively" if args.recursive and target.is_dir() else ""
@@ -545,7 +598,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             else:
                 logger.info(f"\n{file_path}")
 
-        success, total, failures, cached = run_single_file(
+        success, total, failures, cached, _ = run_single_file(
             file_path, config, args, execution_timeout
         )
         total_success += success

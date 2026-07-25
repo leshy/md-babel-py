@@ -299,6 +299,19 @@ md-babel's own rewrite of the file it just ran does not count as a change, so
 watching does not loop. A file that is still being written is left alone until
 its contents stop changing.
 
+## Writing results
+
+When editing a file in place, each block's result is written as soon as that block
+finishes, so a long document fills in as it runs instead of all at once at the end.
+
+Every write re-reads the file first and applies the result to the document as it
+stands, so edits made while the run is in progress are kept. If a block itself is
+edited while it is running, the result it was computing is dropped rather than
+written over the new code. Under `--watch`, a file edited mid-run is processed
+again instead of having that edit absorbed.
+
+`--stdout` and `--output` are unaffected: they produce one document at the end.
+
 ## Caching
 
 Block results are cached by default (in `$XDG_CACHE_HOME/md-babel`); pass
