@@ -74,6 +74,31 @@ plt.savefig('{output}', transparent=True)
 
 ![output](assets/matplotlib-demo.svg)
 
+### ASCII charts
+
+Plain-text line charts with [asciichartpy](https://github.com/kroitor/asciichart) (`pip install md-babel-py[asciichart]`, bundled in the nix/docker builds):
+
+```python
+import asciichartpy
+speed = range(0, 41, 4)  # km/h
+power = [0.3 * (v / 3.6) ** 3 + 4 * v / 3.6 for v in speed]  # W
+print(asciichartpy.plot(power, {"height": 10, "format": "{:6.0f} W"}))
+```
+
+```results
+   456 W ┼         ╭
+   410 W ┤         │
+   365 W ┤         │
+   319 W ┤        ╭╯
+   274 W ┤        │
+   228 W ┤       ╭╯
+   182 W ┤      ╭╯
+   137 W ┤     ╭╯
+    91 W ┤    ╭╯
+    46 W ┤  ╭─╯
+     0 W ┼──╯
+```
+
 ### Pikchr
 
 SQLite's diagram language:

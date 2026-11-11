@@ -14,10 +14,24 @@
         diagonPkg = diagon.legacyPackages.${system}.diagon;
         isLinux = pkgs.stdenv.isLinux;
 
-        # Python with matplotlib for code blocks
+        # asciichartpy isn't in nixpkgs
+        asciichartpy = pkgs.python312Packages.buildPythonPackage rec {
+          pname = "asciichartpy";
+          version = "1.5.25";
+          format = "wheel";  # sdist's setup.py reads a README.md it doesn't ship
+          src = pkgs.fetchPypi {
+            inherit pname version format;
+            dist = "py2.py3";
+            python = "py2.py3";
+            hash = "sha256-M8QXo8jvfQoRuY656m3ZssGxdVnlObIHoX0m1DAtAlg=";
+          };
+        };
+
+        # Python with plotting libs for code blocks
         pythonWithPackages = pkgs.python312.withPackages (ps: [
           ps.matplotlib
           ps.numpy
+          asciichartpy
         ]);
 
         # Python package - minimal, without propagated deps polluting PATH
@@ -98,7 +112,11 @@
           paths = [ md-babel-py ];
           nativeBuildInputs = [ pkgs.makeWrapper ];
           postBuild = ''
-            wrapProgram $out/bin/md-babel-py \
+            # Run md-babel itself on pythonWithPackages: the executor runs python
+            # blocks with sys.executable, so blocks see matplotlib/asciichartpy.
+            rm $out/bin/md-babel-py
+            makeWrapper ${pythonWithPackages}/bin/python3 $out/bin/md-babel-py \
+              --add-flags "-m md_babel_py.cli" \
               --set PATH ${pkgs.lib.makeBinPath ([ pythonWithPackages ] ++ evaluatorDeps)} \
               --set PYTHONPATH ${md-babel-py}/${pkgs.python312.sitePackages} \
               ${pkgs.lib.optionalString isLinux ''
