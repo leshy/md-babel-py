@@ -76,27 +76,41 @@ plt.savefig('{output}', transparent=True)
 
 ### ASCII charts
 
-Plain-text line charts with [asciichartpy](https://github.com/kroitor/asciichart) (`pip install md-babel-py[asciichart]`, bundled in the nix/docker builds):
+Plain-text x/y plots with [plotille](https://github.com/tammoippen/plotille) (`pip install md-babel-py[plotille]`, bundled in the nix/docker builds):
 
 ```python
-import asciichartpy
-speed = range(0, 41, 4)  # km/h
+import plotille
+speed = range(0, 41, 2)  # km/h
 power = [0.3 * (v / 3.6) ** 3 + 4 * v / 3.6 for v in speed]  # W
-print(asciichartpy.plot(power, {"height": 10, "format": "{:6.0f} W"}))
+fig = plotille.Figure()
+fig.width, fig.height = 50, 12
+fig.x_label, fig.y_label = "km/h", "W"
+fig.set_x_limits(0, 40)
+fig.set_y_limits(0, 500)
+fig.origin = False
+fig.x_ticks_fkt = lambda lo, hi: f"{lo:.0f}"
+fig.y_ticks_fkt = lambda lo, hi: f"{lo:.0f}"
+fig.plot(speed, power)
+print(fig.show())
 ```
 
 ```results
-   456 W ┼         ╭
-   410 W ┤         │
-   365 W ┤         │
-   319 W ┤        ╭╯
-   274 W ┤        │
-   228 W ┤       ╭╯
-   182 W ┤      ╭╯
-   137 W ┤     ╭╯
-    91 W ┤    ╭╯
-    46 W ┤  ╭─╯
-     0 W ┼──╯
+   (W)     ^
+       500 |
+       458 | ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+       417 | ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⠊
+       375 | ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⠔⠁⠀
+       333 | ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⠔⠁⠀⠀⠀
+       292 | ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⠔⠁⠀⠀⠀⠀⠀
+       250 | ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡠⠒⠁⠀⠀⠀⠀⠀⠀⠀
+       208 | ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⠔⠊⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+       167 | ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⠔⠊⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+       125 | ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡠⠔⠉⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+        83 | ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⠤⠔⠊⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+        42 | ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣀⠤⠒⠒⠉⠉⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+         0 | ⣀⣀⣀⣀⣀⣀⡠⠤⠤⠤⠤⠔⠒⠒⠒⠒⠊⠉⠉⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+-----------|-|---------|---------|---------|---------|---------|-> (km/h)
+           | 0         8         16        24        32        40
 ```
 
 ### Pikchr

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "md-babel-py"
-version = "1.5.0"
+version = "1.6.0"
 description = "Execute code blocks in markdown files with session support"
 requires-python = ">=3.10"
 license = "MIT"
@@ -19,7 +19,7 @@ md-babel-py = "md_babel_py.cli:main"
 [project.optional-dependencies]
 dev = ["pytest", "ruff", "mypy"]
 matplotlib = ["matplotlib", "numpy"]
-asciichart = ["asciichartpy"]
+plotille = ["plotille"]
 
 [tool.setuptools.packages.find]
 include = ["md_babel_py*"]

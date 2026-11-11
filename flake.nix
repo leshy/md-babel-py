@@ -14,24 +14,11 @@
         diagonPkg = diagon.legacyPackages.${system}.diagon;
         isLinux = pkgs.stdenv.isLinux;
 
-        # asciichartpy isn't in nixpkgs
-        asciichartpy = pkgs.python312Packages.buildPythonPackage rec {
-          pname = "asciichartpy";
-          version = "1.5.25";
-          format = "wheel";  # sdist's setup.py reads a README.md it doesn't ship
-          src = pkgs.fetchPypi {
-            inherit pname version format;
-            dist = "py2.py3";
-            python = "py2.py3";
-            hash = "sha256-M8QXo8jvfQoRuY656m3ZssGxdVnlObIHoX0m1DAtAlg=";
-          };
-        };
-
         # Python with plotting libs for code blocks
         pythonWithPackages = pkgs.python312.withPackages (ps: [
           ps.matplotlib
           ps.numpy
-          asciichartpy
+          ps.plotille
         ]);
 
         # Python package - minimal, without propagated deps polluting PATH
